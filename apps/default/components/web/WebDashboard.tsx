@@ -180,10 +180,14 @@ export default function WebDashboard() {
 
     useEffect(() => {
         if (typeof window === "undefined") return;
-        const onPaste = async (event: ClipboardEvent) => {
+        const onPaste = async (event: WindowEventMap["paste"]) => {
             if (!token) return;
-            const target = event.target as HTMLElement | null;
-            if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+            const target = event.target;
+            if (
+                target instanceof HTMLElement &&
+                (target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+            )
+                return;
             const dataTransfer = event.clipboardData;
             if (!dataTransfer) return;
             const files: Array<File> = [];
@@ -205,8 +209,8 @@ export default function WebDashboard() {
                 await sendText(pastedText);
             }
         };
-        window.addEventListener("paste", onPaste as EventListener);
-        return () => window.removeEventListener("paste", onPaste as EventListener);
+        window.addEventListener("paste", onPaste);
+        return () => window.removeEventListener("paste", onPaste);
     }, [token, sendText, sendFiles]);
 
     const handleDisconnect = useCallback(async () => {
