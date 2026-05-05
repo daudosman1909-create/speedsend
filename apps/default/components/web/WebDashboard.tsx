@@ -10,6 +10,7 @@ import {
     ActivityIndicator,
     Animated,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { useMutation, useQuery, useConvex } from "convex/react";
 import { useAuthActions, useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
@@ -129,6 +130,7 @@ function getCanvasItemFrame(
 }
 
 export default function WebDashboard() {
+    const router = useRouter();
     const { token, setToken, loading: tokenLoading } = useSessionToken();
     const { signOut } = useAuthActions();
     const convex = useConvex();
@@ -486,6 +488,13 @@ export default function WebDashboard() {
                         active={connected || panelOpen}
                         onPress={handleConnectAction}
                     />
+                    {me?.isAdmin && (
+                        <PillButton
+                            icon="analytics-outline"
+                            label="Analytics"
+                            onPress={() => router.push("/analytics")}
+                        />
+                    )}
                     <PillButton
                         icon="share-outline"
                         label="Share"

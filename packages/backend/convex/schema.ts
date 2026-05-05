@@ -38,7 +38,8 @@ export default defineSchema({
     })
         .index("by_code", ["code"])
         .index("by_qr", ["qrToken"])
-        .index("by_session", ["sessionId"]),
+        .index("by_session", ["sessionId"])
+        .index("by_session_and_status", ["sessionId", "status"]),
 
     sharedItems: defineTable({
         sessionId: v.id("browserSessions"),
@@ -75,6 +76,40 @@ export default defineSchema({
     })
         .index("by_session", ["sessionId"])
         .index("by_user_saved", ["userId", "isSaved"]),
+
+    adminUsers: defineTable({
+        userId: v.id("users"),
+        username: v.string(),
+        createdAt: v.number(),
+    }).index("by_userId", ["userId"]),
+
+    userAnalytics: defineTable({
+        userId: v.id("users"),
+        email: v.optional(v.string()),
+        name: v.optional(v.string()),
+        isAnonymous: v.boolean(),
+        firstSeenAt: v.number(),
+        lastLoginAt: v.number(),
+        loginCount: v.number(),
+    })
+        .index("by_userId", ["userId"])
+        .index("by_lastLoginAt", ["lastLoginAt"]),
+
+    analyticsSummary: defineTable({
+        key: v.literal("global"),
+        totalRegisteredUsers: v.number(),
+        totalAnonymousUsers: v.number(),
+        totalLoginEvents: v.number(),
+        totalSessionsCreated: v.number(),
+        activeConnectedSessions: v.number(),
+        totalItemsShared: v.number(),
+        totalFilesShared: v.number(),
+        totalLinksShared: v.number(),
+        totalTextShared: v.number(),
+        totalSavedItems: v.number(),
+        totalSharedBytes: v.number(),
+        lastBackfilledAt: v.optional(v.number()),
+    }).index("by_key", ["key"]),
 
     subscriptions: defineTable({
         userId: v.id("users"),

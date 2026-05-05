@@ -117,6 +117,21 @@ export default function SettingsScreen() {
           </Pressable>
         )}
 
+        {me?.isAdmin && (
+          <Pressable style={styles.card} onPress={() => router.push("/analytics")}>
+            <View style={styles.row}>
+              <View style={[styles.iconBox, { backgroundColor: theme.accentSoft, borderColor: theme.accentBorder }]}>
+                <Ionicons name="analytics-outline" size={16} color={theme.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>Analytics</Text>
+                <Text style={styles.rowSub}>See accounts, logins, sessions, and transfer totals</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+            </View>
+          </Pressable>
+        )}
+
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>SESSION</Text>
           <View style={styles.row}>

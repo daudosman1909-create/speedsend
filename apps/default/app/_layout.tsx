@@ -3,8 +3,9 @@ import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { Stack } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { Platform, View } from "react-native";
-import { theme } from "../lib/theme";
 import { StatusBar } from "expo-status-bar";
+import { AuthAnalyticsSync } from "@/components/AuthAnalyticsSync";
+import { theme } from "../lib/theme";
 
 const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
     unsavedChangesWarning: false,
@@ -26,6 +27,7 @@ export default function RootLayout() {
         >
             <View style={{ flex: 1, backgroundColor: theme.bg }}>
                 <StatusBar style="light" />
+                <AuthAnalyticsSync />
                 <Stack
                     screenOptions={{
                         headerShown: false,

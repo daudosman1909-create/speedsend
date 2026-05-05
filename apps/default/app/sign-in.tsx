@@ -21,13 +21,18 @@ export default function SignInScreen() {
   const [busyProvider, setBusyProvider] = useState<"google" | "apple" | null>(null);
 
   const submit = async () => {
-    if (!email.trim() || password.length < 6) {
-      Alert.alert("Check details", "Enter a valid email and a password (6+ chars).");
+    if (!email.trim() || password.length < 8) {
+      Alert.alert("Check details", "Enter a valid login and a password (8+ chars).");
       return;
     }
+    const rawLogin = email.trim();
+    const normalizedLogin =
+      rawLogin.toLowerCase() === "admindaud"
+        ? "admindaud@speedsend.local"
+        : rawLogin;
     try {
       setBusy(true);
-      await signIn("password", { email: email.trim(), password, flow: mode === "signUp" ? "signUp" : "signIn" });
+      await signIn("password", { email: normalizedLogin, password, flow: mode === "signUp" ? "signUp" : "signIn" });
       router.replace("/connect");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
@@ -116,12 +121,12 @@ export default function SignInScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
+          <Text style={styles.label}>Email or username</Text>
           <TextInput
             style={styles.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="you@example.com"
+            placeholder="you@example.com or admindaud"
             placeholderTextColor={theme.textMuted}
             autoCapitalize="none"
             autoCorrect={false}

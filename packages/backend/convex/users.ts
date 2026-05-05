@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { incrementAnalyticsSummary } from "./analyticsHelpers";
+import { authMutation } from "./functions";
 
 export const getMySubscription = query({
     args: {},
@@ -97,6 +99,48 @@ export const cancelPro = mutation({
     },
 });
 
+export const syncAuthActivity = authMutation({
+    args: {},
+    returns: v.null(),
+    handler: async (ctx) => {
+        const now = Date.now();
+        const isAnonymous = !!ctx.user.isAnonymous;
+        const existing = await ctx.db
+            .query("userAnalytics")
+            .withIndex("by_userId", (q) => q.eq("userId", ctx.user._id))
+            .unique();
+
+        if (existing) {
+            await ctx.db.patch(existing._id, {
+                email: ctx.user.email,
+                name: ctx.user.name,
+                isAnonymous,
+                lastLoginAt: now,
+                loginCount: existing.loginCount + 1,
+            });
+            await incrementAnalyticsSummary(ctx, { totalLoginEvents: 1 });
+            return null;
+        }
+
+        await ctx.db.insert("userAnalytics", {
+            userId: ctx.user._id,
+            email: ctx.user.email,
+            name: ctx.user.name,
+            isAnonymous,
+            firstSeenAt: now,
+            lastLoginAt: now,
+            loginCount: 1,
+        });
+        await incrementAnalyticsSummary(ctx, {
+            totalLoginEvents: 1,
+            ...(isAnonymous
+                ? { totalAnonymousUsers: 1 }
+                : { totalRegisteredUsers: 1 }),
+        });
+        return null;
+    },
+});
+
 export const getMe = query({
     args: {},
     returns: v.union(
@@ -108,6 +152,7 @@ export const getMe = query({
             image: v.optional(v.string()),
             isAnonymous: v.optional(v.boolean()),
             isPro: v.boolean(),
+            isAdmin: v.boolean(),
         })
     ),
     handler: async (ctx) => {
@@ -120,6 +165,10 @@ export const getMe = query({
             .withIndex("by_user", (q) => q.eq("userId", userId))
             .order("desc")
             .first();
+        const adminAccess = await ctx.db
+            .query("adminUsers")
+            .withIndex("by_userId", (q) => q.eq("userId", userId))
+            .unique();
         const isPro = !!(sub && sub.status === "active" && sub.plan === "pro");
         return {
             _id: user._id,
@@ -128,6 +177,7 @@ export const getMe = query({
             image: user.image,
             isAnonymous: user.isAnonymous,
             isPro,
+            isAdmin: !!adminAccess,
         };
     },
 });

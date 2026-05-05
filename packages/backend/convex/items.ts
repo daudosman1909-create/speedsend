@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { incrementAnalyticsSummary } from "./analyticsHelpers";
 
 const itemTypeValidator = v.union(
     v.literal("text"),
@@ -13,10 +14,16 @@ const itemTypeValidator = v.union(
     v.literal("file")
 );
 
-async function getSessionByToken(ctx: any, sessionToken: string) {
+type ItemsCtx = QueryCtx | MutationCtx;
+
+function isFileLikeItemType(itemType: "text" | "link" | "image" | "video" | "audio" | "pdf" | "document" | "file") {
+    return itemType !== "text" && itemType !== "link";
+}
+
+async function getSessionByToken(ctx: ItemsCtx, sessionToken: string) {
     return await ctx.db
         .query("browserSessions")
-        .withIndex("by_token", (q: any) => q.eq("sessionToken", sessionToken))
+        .withIndex("by_token", (q) => q.eq("sessionToken", sessionToken))
         .unique();
 }
 
@@ -49,7 +56,6 @@ export const sendItem = mutation({
             throw new Error("Session is no longer active");
         }
         const userId = await getAuthUserId(ctx);
-        const now = Date.now();
         // Determine pro status
         let isPro = false;
         if (session.userId) {
@@ -76,6 +82,13 @@ export const sendItem = mutation({
             expiresAt: isPro ? undefined : session.expiresAt,
             canvasX: args.canvasX,
             canvasY: args.canvasY,
+        });
+        await incrementAnalyticsSummary(ctx, {
+            totalItemsShared: 1,
+            totalFilesShared: isFileLikeItemType(args.itemType) ? 1 : 0,
+            totalLinksShared: args.itemType === "link" ? 1 : 0,
+            totalTextShared: args.itemType === "text" ? 1 : 0,
+            totalSharedBytes: args.fileSize ?? 0,
         });
         return id;
     },
@@ -188,11 +201,14 @@ export const saveItem = mutation({
         }
         if (!isPro) return { saved: false, needsUpgrade: true };
 
-        await ctx.db.patch(item._id, {
-            isSaved: true,
-            storageMode: "saved",
-            expiresAt: undefined,
-        });
+        if (!item.isSaved) {
+            await ctx.db.patch(item._id, {
+                isSaved: true,
+                storageMode: "saved",
+                expiresAt: undefined,
+            });
+            await incrementAnalyticsSummary(ctx, { totalSavedItems: 1 });
+        }
         return { saved: true, needsUpgrade: false };
     },
 });

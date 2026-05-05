@@ -1,7 +1,8 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
+import { incrementAnalyticsSummary } from "./analyticsHelpers";
 
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
@@ -65,6 +66,7 @@ export const createBrowserSession = mutation({
             expiresAt: now + CODE_EXPIRY_MS,
             status: "active",
         });
+        await incrementAnalyticsSummary(ctx, { totalSessionsCreated: 1 });
 
         return { sessionId, sessionToken, code, qrToken };
     },
@@ -82,12 +84,12 @@ export const newPairingCode = mutation({
         // Expire all old active codes for this session
         const old = await ctx.db
             .query("pairingCodes")
-            .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+            .withIndex("by_session_and_status", (q) =>
+                q.eq("sessionId", session._id).eq("status", "active")
+            )
             .collect();
         for (const c of old) {
-            if (c.status === "active") {
-                await ctx.db.patch(c._id, { status: "expired" });
-            }
+            await ctx.db.patch(c._id, { status: "expired" });
         }
         const code = generateCode();
         const qrToken = generateQrToken();
@@ -134,8 +136,9 @@ export const getSessionByToken = query({
         if (!session) return null;
         const activeCode = await ctx.db
             .query("pairingCodes")
-            .withIndex("by_session", (q) => q.eq("sessionId", session._id))
-            .filter((q) => q.eq(q.field("status"), "active"))
+            .withIndex("by_session_and_status", (q) =>
+                q.eq("sessionId", session._id).eq("status", "active")
+            )
             .order("desc")
             .first();
         let isProUser = false;
@@ -205,6 +208,7 @@ export const pairWithCode = mutation({
         if (!session) throw new Error("Session not found");
         if (session.status === "expired")
             throw new Error("Session has expired");
+        const wasConnected = session.status === "connected";
 
         await ctx.db.patch(pairing._id, { status: "used", usedAt: now });
 
@@ -216,6 +220,9 @@ export const pairWithCode = mutation({
             // If phone is logged in and session has no user, link the user
             userId: session.userId ?? userId ?? undefined,
         });
+        if (!wasConnected) {
+            await incrementAnalyticsSummary(ctx, { activeConnectedSessions: 1 });
+        }
 
         return { sessionId: session._id, sessionToken: session.sessionToken };
     },
@@ -235,6 +242,9 @@ export const disconnectSession = mutation({
             status: "disconnected",
             endedAt: now,
         });
+        if (session.status === "connected") {
+            await incrementAnalyticsSummary(ctx, { activeConnectedSessions: -1 });
+        }
         // Delete temporary items
         await deleteTemporaryItems(ctx, session._id);
         return null;
@@ -242,12 +252,12 @@ export const disconnectSession = mutation({
 });
 
 async function deleteTemporaryItems(
-    ctx: { db: any; storage: any },
+    ctx: MutationCtx,
     sessionId: Id<"browserSessions">
 ) {
     const items = await ctx.db
         .query("sharedItems")
-        .withIndex("by_session", (q: any) => q.eq("sessionId", sessionId))
+        .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
         .collect();
     for (const item of items) {
         if (item.storageMode === "temporary" && !item.isSaved) {
@@ -276,6 +286,9 @@ export const endSessionByPhone = mutation({
             status: "disconnected",
             endedAt: Date.now(),
         });
+        if (session.status === "connected") {
+            await incrementAnalyticsSummary(ctx, { activeConnectedSessions: -1 });
+        }
         await deleteTemporaryItems(ctx, session._id);
         return null;
     },
