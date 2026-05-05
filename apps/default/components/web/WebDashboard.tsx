@@ -13,7 +13,7 @@ import {
 import { useMutation, useQuery, useConvex } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
-import { theme, radii, formatBytes, formatRelativeTime, isLikelyUrl } from "@/lib/theme";
+import { theme, radii, isLikelyUrl } from "@/lib/theme";
 import { useSessionToken, detectBrowserName, detectDeviceName } from "@/lib/session-token";
 import { uploadFileBlob } from "@/lib/upload";
 import { QRCodeView } from "@/components/QRCodeView";
@@ -214,8 +214,8 @@ export default function WebDashboard() {
                 await sendText(text);
             }
         };
-        window.addEventListener("paste", onPaste as EventListener);
-        return () => window.removeEventListener("paste", onPaste as EventListener);
+        window.addEventListener("paste", onPaste as unknown as EventListener);
+        return () => window.removeEventListener("paste", onPaste as unknown as EventListener);
     }, [token, sendText, sendFiles]);
 
     const handleDisconnect = useCallback(async () => {

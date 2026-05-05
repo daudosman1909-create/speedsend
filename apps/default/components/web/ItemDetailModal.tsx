@@ -70,7 +70,6 @@ export function ItemDetailModal({
                             />
                         ) : item.itemType === "video" && item.fileUrl ? (
                             Platform.OS === "web" ? (
-                                // eslint-disable-next-line jsx-a11y/media-has-caption
                                 <video
                                     src={item.fileUrl}
                                     controls
@@ -84,7 +83,6 @@ export function ItemDetailModal({
                             ) : null
                         ) : item.itemType === "audio" && item.fileUrl ? (
                             Platform.OS === "web" ? (
-                                // eslint-disable-next-line jsx-a11y/media-has-caption
                                 <audio src={item.fileUrl} controls style={{ width: "100%" }} />
                             ) : null
                         ) : item.itemType === "text" || item.itemType === "link" ? (

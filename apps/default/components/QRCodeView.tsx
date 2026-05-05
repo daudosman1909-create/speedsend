@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { View, Platform } from "react-native";
+// @ts-expect-error - no types ship with qrcode-generator
 import qrGen from "qrcode-generator";
 
 interface Props {
@@ -26,7 +27,7 @@ function generateMatrix(value: string): boolean[][] {
   return matrix;
 }
 
-export default function QRCodeView({
+export function QRCodeView({
   value,
   size = 220,
   backgroundColor = "#ffffff",
@@ -39,7 +40,6 @@ export default function QRCodeView({
   const logoSize = Math.floor(size * 0.22);
 
   if (Platform.OS === "web") {
-    // Render with SVG via dangerouslySetInnerHTML for crisp display
     let rects = "";
     for (let r = 0; r < count; r++) {
       for (let c = 0; c < count; c++) {
@@ -52,13 +52,12 @@ export default function QRCodeView({
     return (
       <View
         style={{ width: size, height: size }}
-        // @ts-ignore - web-only prop
+        // @ts-expect-error - web-only prop
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     );
   }
 
-  // Native: render with Views
   return (
     <View
       style={{
@@ -66,7 +65,6 @@ export default function QRCodeView({
         height: size,
         backgroundColor,
         borderRadius: 12,
-        padding: 0,
       }}
     >
       {matrix.map((row, r) => (
@@ -108,3 +106,5 @@ export default function QRCodeView({
     </View>
   );
 }
+
+export default QRCodeView;

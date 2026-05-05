@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import {
     View,
     Text,
@@ -140,7 +140,7 @@ export function CanvasItem({
 
     return (
         <Animated.View
-            ref={ref as unknown as React.Ref<Animated.View>}
+            ref={ref as React.Ref<React.ComponentRef<typeof Animated.View>>}
             style={[
                 styles.card,
                 {
@@ -170,7 +170,6 @@ export function CanvasItem({
                 ) : item.itemType === "video" && item.fileUrl ? (
                     <View style={[styles.preview, styles.videoPreview]}>
                         {Platform.OS === "web" ? (
-                            // eslint-disable-next-line jsx-a11y/media-has-caption
                             <video
                                 src={item.fileUrl}
                                 style={{

@@ -4,7 +4,7 @@ import * as SecureStore from "expo-secure-store";
 
 const KEY = "relay.sessionToken";
 
-async function getStoredToken(): Promise<string | null> {
+export async function getSessionToken(): Promise<string | null> {
     if (Platform.OS === "web") {
         if (typeof window === "undefined") return null;
         return window.localStorage.getItem(KEY);
@@ -12,7 +12,7 @@ async function getStoredToken(): Promise<string | null> {
     return await SecureStore.getItemAsync(KEY);
 }
 
-async function setStoredToken(token: string | null) {
+export async function setSessionToken(token: string | null) {
     if (Platform.OS === "web") {
         if (typeof window === "undefined") return;
         if (token) window.localStorage.setItem(KEY, token);
@@ -28,7 +28,7 @@ export function useSessionToken() {
 
     useEffect(() => {
         let cancelled = false;
-        getStoredToken().then((t) => {
+        getSessionToken().then((t) => {
             if (!cancelled) setToken(t);
         });
         return () => {
@@ -37,7 +37,7 @@ export function useSessionToken() {
     }, []);
 
     const save = useCallback(async (t: string | null) => {
-        await setStoredToken(t);
+        await setSessionToken(t);
         setToken(t);
     }, []);
 
