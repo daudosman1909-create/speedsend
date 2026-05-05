@@ -7,8 +7,47 @@ import { api } from "@/convex/_generated/api";
 import { theme } from "@/lib/theme";
 import { setSessionToken, detectDeviceName } from "@/lib/session-token";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 type Mode = "qr" | "code";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parsePairingScan(data: string): { code?: string; qrToken?: string } {
+  const trimmed = data.trim();
+  if (!trimmed) return {};
+
+  if (trimmed.startsWith("qr_")) return { qrToken: trimmed };
+
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (isRecord(parsed)) {
+      const qr = parsed.qr;
+      const qrToken = parsed.qrToken;
+      const code = parsed.code;
+      if (typeof qr === "string") return { qrToken: qr };
+      if (typeof qrToken === "string") return { qrToken };
+      if (typeof code === "string") return { code };
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const encoded = url.searchParams.get("data");
+    if (encoded) return parsePairingScan(decodeURIComponent(encoded));
+  } catch {
+    // ignore
+  }
+
+  const match = trimmed.match(/data=([^&]+)/);
+  if (match) return parsePairingScan(decodeURIComponent(match[1]));
+
+  return { code: trimmed };
+}
 
 export default function ConnectScreen() {
   const router = useRouter();
@@ -43,29 +82,24 @@ export default function ConnectScreen() {
   const handleScan = ({ data }: { data: string }) => {
     if (!scanning || busy) return;
     setScanning(false);
-    // The QR encodes: relay://pair?data=<encoded JSON {code, qr}>
-    try {
-      const m = data.match(/data=([^&]+)/);
-      if (m) {
-        const payload = JSON.parse(decodeURIComponent(m[1]));
-        if (payload.qr) {
-          void submit({ qrToken: payload.qr });
-          return;
-        }
-        if (payload.code) {
-          void submit({ code: payload.code });
-          return;
-        }
-      }
-      // fallback: treat full string as a code
-      void submit({ code: data });
-    } catch {
-      void submit({ code: data });
+
+    const parsed = parsePairingScan(data);
+    if (parsed.qrToken) {
+      void submit({ qrToken: parsed.qrToken });
+      return;
     }
+    if (parsed.code) {
+      void submit({ code: parsed.code });
+      return;
+    }
+
+    Alert.alert("Couldn't read QR", "Try scanning again or use the code instead.");
+    setScanning(true);
   };
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.topRow}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color={theme.text} />

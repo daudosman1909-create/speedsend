@@ -117,10 +117,9 @@ export default function WebDashboard() {
 
     // Pairing payload encoded into the QR
     const qrValue = useMemo(() => {
-        if (!qrToken || !code) return "";
-        const payload = { v: 1, code, qr: qrToken };
-        return `relay://pair?data=${encodeURIComponent(JSON.stringify(payload))}`;
-    }, [qrToken, code]);
+        if (!qrToken) return "";
+        return qrToken;
+    }, [qrToken]);
 
     const [textDraft, setTextDraft] = useState("");
     const [selectedItemId, setSelectedItemId] = useState<Id<"sharedItems"> | null>(null);
@@ -334,14 +333,11 @@ export default function WebDashboard() {
                         {qrValue ? (
                             <View style={{ position: "relative", alignItems: "center" }}>
                                 <QRCodeView value={qrValue} size={196} />
-                                <View style={styles.qrCenterBadge}>
-                                    <Ionicons name="flash" size={14} color="#fff" />
-                                </View>
                             </View>
                         ) : (
                             <ActivityIndicator color={theme.accent} />
                         )}
-                        <Text style={styles.qrHelper}>Scan with the Relay app</Text>
+                        <Text style={styles.qrHelper}>Scan with Relay on your phone</Text>
                     </View>
 
                     {/* Code card */}
@@ -387,7 +383,6 @@ export default function WebDashboard() {
                         </View>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.promoTitle}>Relay for iOS &amp; Android</Text>
-                            <Text style={styles.promoSub}>Built with bloom.diy</Text>
                         </View>
                         <Pressable style={styles.promoCta}>
                             <Text style={styles.promoCtaText}>Get app →</Text>

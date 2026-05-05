@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { theme } from "@/lib/theme";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function WelcomeScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.content}>
         <View style={{ alignItems: "flex-start" }}>
           <View style={styles.logoBox}>
@@ -67,7 +69,6 @@ export default function WelcomeScreen() {
           <Pressable style={styles.tertiaryBtn} onPress={continueTemporary} disabled={busy}>
             {busy ? <ActivityIndicator color={theme.accent} /> : <Text style={styles.tertiaryBtnText}>Continue temporary</Text>}
           </Pressable>
-          <Text style={styles.footer}>Built with bloom.diy</Text>
         </View>
       </View>
     </View>
@@ -106,5 +107,4 @@ const styles = StyleSheet.create({
   secondaryBtnText: { color: theme.text, fontSize: 15, fontWeight: "600" },
   tertiaryBtn: { paddingVertical: 14, alignItems: "center" },
   tertiaryBtnText: { color: theme.textSecondary, fontSize: 14, fontWeight: "500" },
-  footer: { color: theme.textMuted, fontSize: 11, textAlign: "center", marginTop: 8 },
 });

@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { theme } from "@/lib/theme";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 type Mode = "signIn" | "signUp";
 
@@ -57,6 +58,7 @@ export default function SignInScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.topRow}>
         <Pressable style={styles.iconBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color={theme.text} />

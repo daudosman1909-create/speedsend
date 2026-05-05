@@ -12,6 +12,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 type SessionItem = NonNullable<ReturnType<typeof useQuery<typeof api.items.listSessionItems>>>[number];
 
@@ -154,6 +155,7 @@ export default function SessionScreen() {
   if (!loading && !token) {
     return (
       <View style={styles.empty}>
+        <GridBackdrop />
         <Ionicons name="flash-outline" size={36} color={theme.textMuted} />
         <Text style={styles.emptyText}>Not connected</Text>
         <Pressable style={styles.primaryBtn} onPress={() => router.replace("/connect")}>
@@ -165,6 +167,7 @@ export default function SessionScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.topRow}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <View style={[styles.dot, { backgroundColor: connected ? theme.accent : theme.textMuted }]} />

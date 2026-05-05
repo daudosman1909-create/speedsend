@@ -2,11 +2,12 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Image, TextInput, Platform, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { theme, formatBytes, formatRelativeTime } from "@/lib/theme";
 import { useSessionToken } from "@/lib/session-token";
+import { GridBackdrop } from "@/components/GridBackdrop";
 import * as Clipboard from "expo-clipboard";
 
 type SessionItem = NonNullable<ReturnType<typeof useQuery<typeof api.items.listSessionItems>>>[number];
@@ -54,6 +55,7 @@ export default function InboxScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.topRow}>
         <Pressable style={styles.iconBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color={theme.text} />

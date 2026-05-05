@@ -6,6 +6,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { theme, isLikelyUrl } from "@/lib/theme";
 import { useSessionToken } from "@/lib/session-token";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 export default function SendTextScreen() {
   const router = useRouter();
@@ -38,46 +39,49 @@ export default function SendTextScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.topRow}>
-        <Pressable style={styles.iconBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={22} color={theme.text} />
-        </Pressable>
-        <Text style={styles.title}>Send text</Text>
-        <View style={{ width: 40 }} />
-      </View>
-      <View style={{ flex: 1, padding: 18, gap: 12 }}>
-        <View style={styles.editorCard}>
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder="Type or paste anything to send to your computer…"
-            placeholderTextColor={theme.textMuted}
-            multiline
-            autoFocus
-            style={styles.editor}
-          />
+    <View style={styles.container}>
+      <GridBackdrop />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.topRow}>
+          <Pressable style={styles.iconBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={22} color={theme.text} />
+          </Pressable>
+          <Text style={styles.title}>Send text</Text>
+          <View style={{ width: 40 }} />
         </View>
-        <Pressable onPress={() => setClear((c) => !c)} style={styles.toggleRow}>
-          <View style={[styles.toggle, clear && { backgroundColor: theme.accent }]}>
-            {clear && <Ionicons name="checkmark" size={12} color="#0a0a0d" />}
+        <View style={{ flex: 1, padding: 18, gap: 12 }}>
+          <View style={styles.editorCard}>
+            <TextInput
+              value={text}
+              onChangeText={setText}
+              placeholder="Type or paste anything to send to your computer…"
+              placeholderTextColor={theme.textMuted}
+              multiline
+              autoFocus
+              style={styles.editor}
+            />
           </View>
-          <Text style={styles.toggleText}>Clear after send</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.primaryBtn, (!text.trim() || busy) && { opacity: 0.5 }]}
-          disabled={!text.trim() || busy}
-          onPress={submit}
-        >
-          {busy ? <ActivityIndicator color="#0a0a0d" /> : (
-            <>
-              <Ionicons name="arrow-up" size={18} color="#0a0a0d" />
-              <Text style={styles.primaryBtnText}>Send to computer</Text>
-            </>
-          )}
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          <Pressable onPress={() => setClear((c) => !c)} style={styles.toggleRow}>
+            <View style={[styles.toggle, clear && { backgroundColor: theme.accent }]}>
+              {clear && <Ionicons name="checkmark" size={12} color="#0a0a0d" />}
+            </View>
+            <Text style={styles.toggleText}>Clear after send</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.primaryBtn, (!text.trim() || busy) && { opacity: 0.5 }]}
+            disabled={!text.trim() || busy}
+            onPress={submit}
+          >
+            {busy ? <ActivityIndicator color="#0a0a0d" /> : (
+              <>
+                <Ionicons name="arrow-up" size={18} color="#0a0a0d" />
+                <Text style={styles.primaryBtnText}>Send to computer</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 

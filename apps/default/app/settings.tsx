@@ -7,6 +7,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { theme } from "@/lib/theme";
 import { useSessionToken } from "@/lib/session-token";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.topRow}>
         <Pressable style={styles.iconBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color={theme.text} />
@@ -139,8 +141,6 @@ export default function SettingsScreen() {
             <Text style={[styles.linkText, { color: theme.danger }]}>Sign out</Text>
           </Pressable>
         ) : null}
-
-        <Text style={styles.footer}>Relay v1 · Built with bloom.diy</Text>
       </ScrollView>
     </View>
   );
@@ -162,5 +162,4 @@ const styles = StyleSheet.create({
   linkText: { color: theme.textSecondary, fontSize: 13, fontWeight: "500" },
   dangerBtn: { flexDirection: "row", gap: 6, alignSelf: "flex-start", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: "rgba(255,94,108,0.08)", borderWidth: 1, borderColor: "rgba(255,94,108,0.25)" },
   dangerBtnText: { color: theme.danger, fontSize: 12, fontWeight: "600" },
-  footer: { color: theme.textMuted, fontSize: 11, textAlign: "center", marginTop: 12 },
 });

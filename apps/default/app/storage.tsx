@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Image, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Image, Platform, Alert, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { theme, formatBytes, formatRelativeTime } from "@/lib/theme";
+import { useSessionToken } from "@/lib/session-token";
+import { GridBackdrop } from "@/components/GridBackdrop";
 import * as Clipboard from "expo-clipboard";
 
 type Filter = "all" | "text" | "image" | "video" | "audio" | "file" | "link";
@@ -35,7 +37,9 @@ export default function StorageScreen() {
 
   if (!me) return null;
 
-  if (!me.isPro) {
+  const isPro = me.isPro;
+
+  if (!isPro) {
     return (
       <View style={[styles.container, { alignItems: "center", justifyContent: "center", padding: 24 }]}>
         <Ionicons name="lock-closed-outline" size={32} color={theme.textMuted} />
@@ -50,6 +54,7 @@ export default function StorageScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <View style={styles.topRow}>
         <Pressable style={styles.iconBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color={theme.text} />
