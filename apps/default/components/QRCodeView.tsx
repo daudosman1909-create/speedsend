@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 import qrGen from "qrcode-generator";
 
 interface Props {
@@ -56,36 +56,6 @@ export function QRCodeView({
 }: Props) {
   const matrix = useMemo(() => generateMatrix(value || "placeholder"), [value]);
   const layout = useMemo(() => getLayout(size, matrix.length), [matrix.length, size]);
-
-  if (Platform.OS === "web") {
-    let rects = "";
-    for (let row = 0; row < layout.moduleCount; row++) {
-      for (let column = 0; column < layout.moduleCount; column++) {
-        if (matrix[row]?.[column]) {
-          rects += `<rect x="${layout.margin + column * layout.cellSize}" y="${layout.margin + row * layout.cellSize}" width="${layout.cellSize}" height="${layout.cellSize}" fill="${foregroundColor}"/>`;
-        }
-      }
-    }
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${layout.totalSize}" height="${layout.totalSize}" viewBox="0 0 ${layout.totalSize} ${layout.totalSize}"><rect width="${layout.totalSize}" height="${layout.totalSize}" rx="12" ry="12" fill="${backgroundColor}"/>${rects}</svg>`;
-
-    return (
-      <View
-        style={{
-          width: size,
-          height: size,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <View
-          style={{ width: layout.totalSize, height: layout.totalSize }}
-          // @ts-expect-error web-only prop
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-      </View>
-    );
-  }
 
   return (
     <View
