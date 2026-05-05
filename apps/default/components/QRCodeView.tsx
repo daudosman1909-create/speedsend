@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
 import { View, Platform } from "react-native";
-// @ts-expect-error - no types ship with qrcode-generator
 import qrGen from "qrcode-generator";
 
 interface Props {
