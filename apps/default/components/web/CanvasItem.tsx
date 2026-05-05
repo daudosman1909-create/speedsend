@@ -95,9 +95,11 @@ export function CanvasItem({
     }, [fade]);
 
     const ref = useRef<View>(null);
+    const actionsRef = useRef<View>(null);
     useEffect(() => {
         if (Platform.OS !== "web") return;
         const node = (ref.current as unknown as HTMLElement | null) ?? null;
+        const actionsNode = (actionsRef.current as unknown as HTMLElement | null) ?? null;
         if (!node) return;
 
         node.dataset.canvasItemRoot = "true";
@@ -115,11 +117,7 @@ export function CanvasItem({
         const onMouseDown = (event: MouseEvent) => {
             if (event.button !== 0) return;
             const target = event.target as HTMLElement | null;
-            if (
-                target?.closest(
-                    "button, [role='button'], [data-noclick='true']"
-                )
-            ) {
+            if (target && actionsNode?.contains(target)) {
                 return;
             }
 
@@ -328,7 +326,7 @@ export function CanvasItem({
                         </Text>
                     </View>
                 </View>
-                <View style={styles.actions}>
+                <View style={styles.actions} ref={actionsRef}>
                     <Pressable
                         style={styles.actionBtn}
                         onPress={async () => {
