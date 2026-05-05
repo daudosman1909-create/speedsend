@@ -42,6 +42,7 @@ export default function StorageScreen() {
   if (!isPro) {
     return (
       <View style={[styles.container, { alignItems: "center", justifyContent: "center", padding: 24 }]}>
+        <GridBackdrop />
         <Ionicons name="lock-closed-outline" size={32} color={theme.textMuted} />
         <Text style={[styles.title, { marginTop: 12 }]}>Saved storage is Pro</Text>
         <Text style={[styles.subtitle, { textAlign: "center", marginVertical: 8 }]}>Upgrade to keep files and history beyond your session.</Text>

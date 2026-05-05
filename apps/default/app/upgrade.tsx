@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { theme } from "@/lib/theme";
+import { GridBackdrop } from "@/components/GridBackdrop";
 
 export default function UpgradeScreen() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function UpgradeScreen() {
 
   return (
     <View style={styles.container}>
+      <GridBackdrop />
       <ScrollView contentContainerStyle={{ padding: 24, gap: 18 }}>
         <Pressable style={styles.iconBtn} onPress={() => router.back()}>
           <Ionicons name="close" size={22} color={theme.text} />

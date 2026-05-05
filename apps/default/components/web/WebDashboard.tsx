@@ -265,8 +265,6 @@ export default function WebDashboard() {
                         <Ionicons name="flash" size={18} color="#fff" />
                     </View>
                     <Text style={styles.brandText}>Relay</Text>
-                    <View style={styles.dot} />
-                    <Text style={styles.brandSubtle}>by bloom.diy</Text>
                 </View>
                 <View style={styles.topActions}>
                     <PillButton
