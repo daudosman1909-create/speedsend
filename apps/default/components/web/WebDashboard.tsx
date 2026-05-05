@@ -1494,6 +1494,13 @@ const styles = StyleSheet.create({
         borderColor: theme.border,
         overflow: "hidden",
         position: "relative",
+        ...(Platform.OS === "web"
+            ? ({
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTouchCallout: "none",
+              } as unknown as object)
+            : {}),
     },
     canvasDragOver: {
         borderColor: theme.accentBorder,
@@ -1503,6 +1510,12 @@ const styles = StyleSheet.create({
         position: "absolute",
         top: 0,
         left: 0,
+        ...(Platform.OS === "web"
+            ? ({
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+              } as unknown as object)
+            : {}),
     },
     selectionBox: {
         position: "absolute",

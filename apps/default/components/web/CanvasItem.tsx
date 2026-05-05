@@ -110,6 +110,7 @@ function CanvasItemComponent({
         const node = (ref.current as unknown as HTMLElement | null) ?? null;
         const actionsNode = (actionsRef.current as unknown as HTMLElement | null) ?? null;
         if (!node) return;
+        const body = document.body;
 
         node.dataset.canvasItemRoot = "true";
         node.dataset.itemId = item._id;
@@ -123,6 +124,8 @@ function CanvasItemComponent({
         let activeDragIds: ItemDoc["_id"][] = [];
         let previewNodes: HTMLElement[] = [];
         let previewFrame: number | null = null;
+        let previousBodyUserSelect = "";
+        let previousBodyWebkitUserSelect = "";
 
         const clearPreview = () => {
             previewNodes.forEach((previewNode) => {
@@ -130,6 +133,22 @@ function CanvasItemComponent({
                 previewNode.style.zIndex = "";
                 previewNode.style.willChange = "";
             });
+        };
+
+        const lockSelection = () => {
+            previousBodyUserSelect = body.style.userSelect;
+            previousBodyWebkitUserSelect = body.style.webkitUserSelect;
+            body.style.userSelect = "none";
+            body.style.webkitUserSelect = "none";
+        };
+
+        const unlockSelection = () => {
+            body.style.userSelect = previousBodyUserSelect;
+            body.style.webkitUserSelect = previousBodyWebkitUserSelect;
+        };
+
+        const onSelectStart = (event: Event) => {
+            event.preventDefault();
         };
 
         const schedulePreview = () => {
@@ -176,6 +195,7 @@ function CanvasItemComponent({
                 previewNode.style.zIndex = "20";
             });
             if (!currentIsSelected) onActivateSelection(item._id);
+            lockSelection();
             node.style.cursor = "grabbing";
             event.preventDefault();
             event.stopPropagation();
@@ -203,11 +223,13 @@ function CanvasItemComponent({
                 previewFrame = null;
             }
             clearPreview();
+            unlockSelection();
             if (!didDrag) return;
             suppressSelectUntilRef.current = Date.now() + 250;
             onCommitDrag(activeDragIds, currentDeltaX, currentDeltaY);
         };
 
+        node.addEventListener("selectstart", onSelectStart);
         node.addEventListener("mousedown", onMouseDown);
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
@@ -216,6 +238,8 @@ function CanvasItemComponent({
                 cancelAnimationFrame(previewFrame);
             }
             clearPreview();
+            unlockSelection();
+            node.removeEventListener("selectstart", onSelectStart);
             node.removeEventListener("mousedown", onMouseDown);
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
@@ -468,6 +492,9 @@ const styles = StyleSheet.create({
             ? ({
                   cursor: "grab",
                   willChange: "transform",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTouchCallout: "none",
               } as unknown as object)
             : {}),
     },
