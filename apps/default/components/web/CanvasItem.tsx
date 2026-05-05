@@ -77,6 +77,8 @@ export function CanvasItem({
               ? 160
               : 140;
     const suppressSelectUntilRef = useRef(0);
+    const isSelectedRef = useRef(isSelected);
+    const selectedItemIdsRef = useRef(selectedItemIds);
 
     // Default position from server, fallback to gridded layout
     const defaultX = item.canvasX ?? ((index * 0.18 + 0.08) % 0.7);
@@ -93,6 +95,11 @@ export function CanvasItem({
             damping: 14,
         }).start();
     }, [fade]);
+
+    useEffect(() => {
+        isSelectedRef.current = isSelected;
+        selectedItemIdsRef.current = selectedItemIds;
+    }, [isSelected, selectedItemIds]);
 
     const ref = useRef<View>(null);
     const actionsRef = useRef<View>(null);
@@ -127,11 +134,13 @@ export function CanvasItem({
             startY = event.clientY;
             currentDeltaX = 0;
             currentDeltaY = 0;
+            const currentIsSelected = isSelectedRef.current;
+            const currentSelectedItemIds = selectedItemIdsRef.current;
             activeDragIds =
-                isSelected && selectedItemIds.length > 0
-                    ? selectedItemIds
+                currentIsSelected && currentSelectedItemIds.length > 0
+                    ? currentSelectedItemIds
                     : [item._id];
-            if (!isSelected) onActivateSelection(item._id);
+            if (!currentIsSelected) onActivateSelection(item._id);
             node.style.cursor = "grabbing";
             event.preventDefault();
             event.stopPropagation();
@@ -169,7 +178,7 @@ export function CanvasItem({
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
         };
-    }, [isSelected, item._id, onActivateSelection, onCommitDrag, onPreviewDrag, selectedItemIds]);
+    }, [item._id, onActivateSelection, onCommitDrag, onPreviewDrag]);
 
     return (
         <Animated.View
