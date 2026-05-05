@@ -24,12 +24,15 @@ interface Props {
     canvasH: number;
     isSelected: boolean;
     selectedItemIds: ItemDoc["_id"][];
-    dragOffset?: { x: number; y: number };
     onSelectItem: (id: ItemDoc["_id"]) => void;
     onActivateSelection: (id: ItemDoc["_id"]) => void;
     onDeleteItem: (id: ItemDoc["_id"]) => void;
     onSaveItem: (id: ItemDoc["_id"]) => void;
-    onPreviewDrag: (ids: ItemDoc["_id"][], deltaX: number, deltaY: number) => void;
+    clampDragDelta: (
+        ids: ItemDoc["_id"][],
+        deltaX: number,
+        deltaY: number
+    ) => { x: number; y: number };
     onCommitDrag: (ids: ItemDoc["_id"][], deltaX: number, deltaY: number) => void;
 }
 
@@ -61,12 +64,11 @@ function CanvasItemComponent({
     canvasH,
     isSelected,
     selectedItemIds,
-    dragOffset,
     onSelectItem,
     onActivateSelection,
     onDeleteItem,
     onSaveItem,
-    onPreviewDrag,
+    clampDragDelta,
     onCommitDrag,
 }: Props) {
     const cardW = item.itemType === "image" || item.itemType === "video" ? 220 : 240;
@@ -112,7 +114,6 @@ function CanvasItemComponent({
         node.dataset.canvasItemRoot = "true";
         node.dataset.itemId = item._id;
 
-        const dragThreshold = 6;
         let dragging = false;
         let didDrag = false;
         let startX = 0;
@@ -120,6 +121,31 @@ function CanvasItemComponent({
         let currentDeltaX = 0;
         let currentDeltaY = 0;
         let activeDragIds: ItemDoc["_id"][] = [];
+        let previewNodes: HTMLElement[] = [];
+        let previewFrame: number | null = null;
+
+        const clearPreview = () => {
+            previewNodes.forEach((previewNode) => {
+                previewNode.style.translate = "0px 0px";
+                previewNode.style.zIndex = "";
+                previewNode.style.willChange = "";
+            });
+        };
+
+        const schedulePreview = () => {
+            if (previewFrame !== null || typeof requestAnimationFrame !== "function") {
+                previewNodes.forEach((previewNode) => {
+                    previewNode.style.translate = `${currentDeltaX}px ${currentDeltaY}px`;
+                });
+                return;
+            }
+            previewFrame = requestAnimationFrame(() => {
+                previewFrame = null;
+                previewNodes.forEach((previewNode) => {
+                    previewNode.style.translate = `${currentDeltaX}px ${currentDeltaY}px`;
+                });
+            });
+        };
 
         const onMouseDown = (event: MouseEvent) => {
             if (event.button !== 0) return;
@@ -140,6 +166,15 @@ function CanvasItemComponent({
                 currentIsSelected && currentSelectedItemIds.length > 0
                     ? currentSelectedItemIds
                     : [item._id];
+            previewNodes = activeDragIds
+                .map((id) => document.querySelector(`[data-item-id='${id}']`))
+                .filter((previewNode): previewNode is HTMLElement =>
+                    previewNode instanceof HTMLElement
+                );
+            previewNodes.forEach((previewNode) => {
+                previewNode.style.willChange = "transform";
+                previewNode.style.zIndex = "20";
+            });
             if (!currentIsSelected) onActivateSelection(item._id);
             node.style.cursor = "grabbing";
             event.preventDefault();
@@ -148,16 +183,14 @@ function CanvasItemComponent({
 
         const onMouseMove = (event: MouseEvent) => {
             if (!dragging) return;
-            currentDeltaX = event.clientX - startX;
-            currentDeltaY = event.clientY - startY;
-            if (
-                !didDrag &&
-                Math.hypot(currentDeltaX, currentDeltaY) >= dragThreshold
-            ) {
-                didDrag = true;
-            }
-            if (!didDrag) return;
-            onPreviewDrag(activeDragIds, currentDeltaX, currentDeltaY);
+            const rawDeltaX = event.clientX - startX;
+            const rawDeltaY = event.clientY - startY;
+            const nextDelta = clampDragDelta(activeDragIds, rawDeltaX, rawDeltaY);
+            currentDeltaX = nextDelta.x;
+            currentDeltaY = nextDelta.y;
+            if (!didDrag && currentDeltaX === 0 && currentDeltaY === 0) return;
+            didDrag = true;
+            schedulePreview();
             event.preventDefault();
         };
 
@@ -165,6 +198,11 @@ function CanvasItemComponent({
             if (!dragging) return;
             dragging = false;
             node.style.cursor = "grab";
+            if (previewFrame !== null && typeof cancelAnimationFrame === "function") {
+                cancelAnimationFrame(previewFrame);
+                previewFrame = null;
+            }
+            clearPreview();
             if (!didDrag) return;
             suppressSelectUntilRef.current = Date.now() + 250;
             onCommitDrag(activeDragIds, currentDeltaX, currentDeltaY);
@@ -174,11 +212,15 @@ function CanvasItemComponent({
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
         return () => {
+            if (previewFrame !== null && typeof cancelAnimationFrame === "function") {
+                cancelAnimationFrame(previewFrame);
+            }
+            clearPreview();
             node.removeEventListener("mousedown", onMouseDown);
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
         };
-    }, [item._id, onActivateSelection, onCommitDrag, onPreviewDrag]);
+    }, [clampDragDelta, item._id, onActivateSelection, onCommitDrag]);
 
     return (
         <Animated.View
@@ -193,8 +235,6 @@ function CanvasItemComponent({
                     minHeight: cardH,
                     opacity: fade,
                     transform: [
-                        { translateX: dragOffset?.x ?? 0 },
-                        { translateY: dragOffset?.y ?? 0 },
                         {
                             scale: fade.interpolate({
                                 inputRange: [0, 1],
@@ -398,15 +438,6 @@ function CanvasItemComponent({
     );
 }
 
-function areDragOffsetsEqual(
-    previous?: { x: number; y: number },
-    next?: { x: number; y: number }
-) {
-    if (!previous && !next) return true;
-    if (!previous || !next) return false;
-    return previous.x === next.x && previous.y === next.y;
-}
-
 export const CanvasItem = memo(CanvasItemComponent, (previous, next) => {
     return (
         previous.item === next.item &&
@@ -415,12 +446,11 @@ export const CanvasItem = memo(CanvasItemComponent, (previous, next) => {
         previous.canvasH === next.canvasH &&
         previous.isSelected === next.isSelected &&
         previous.selectedItemIds === next.selectedItemIds &&
-        areDragOffsetsEqual(previous.dragOffset, next.dragOffset) &&
+        previous.clampDragDelta === next.clampDragDelta &&
         previous.onSelectItem === next.onSelectItem &&
         previous.onActivateSelection === next.onActivateSelection &&
         previous.onDeleteItem === next.onDeleteItem &&
         previous.onSaveItem === next.onSaveItem &&
-        previous.onPreviewDrag === next.onPreviewDrag &&
         previous.onCommitDrag === next.onCommitDrag
     );
 });
@@ -434,7 +464,12 @@ const styles = StyleSheet.create({
         borderColor: theme.border,
         overflow: "hidden",
         boxShadow: "0 8px 22px rgba(0,0,0,0.45)",
-        ...(Platform.OS === "web" ? ({ cursor: "grab" } as unknown as object) : {}),
+        ...(Platform.OS === "web"
+            ? ({
+                  cursor: "grab",
+                  willChange: "transform",
+              } as unknown as object)
+            : {}),
     },
     cardSelected: {
         borderColor: theme.accentBorder,
