@@ -5,16 +5,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { theme } from "@/lib/theme";
 import { GridBackdrop } from "@/components/GridBackdrop";
+import { useOAuthSignIn } from "@/hooks/use-oauth-sign-in";
+import { BrandMark } from "@/components/BrandMark";
 
 type Mode = "signIn" | "signUp";
 
 export default function SignInScreen() {
   const router = useRouter();
   const { signIn } = useAuthActions();
+  const { signInWith, isLoading: oauthLoading } = useOAuthSignIn();
   const [mode, setMode] = useState<Mode>("signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<"google" | "apple" | null>(null);
 
   const submit = async () => {
     if (!email.trim() || password.length < 6) {
@@ -43,16 +47,16 @@ export default function SignInScreen() {
     }
   };
 
-  const continueAnon = async () => {
+  const handleOAuth = async (provider: "google" | "apple") => {
     try {
-      setBusy(true);
-      await signIn("anonymous");
+      setBusyProvider(provider);
+      await signInWith(provider);
       router.replace("/connect");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Try again.";
-      Alert.alert("Error", msg);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Try again.";
+      Alert.alert("Sign in failed", message);
     } finally {
-      setBusy(false);
+      setBusyProvider(null);
     }
   };
 
@@ -67,6 +71,50 @@ export default function SignInScreen() {
         <View style={{ width: 40 }} />
       </View>
       <View style={styles.body}>
+        <BrandMark size="md" />
+
+        <Pressable
+          style={styles.socialBtn}
+          onPress={() => {
+            void handleOAuth("google");
+          }}
+          disabled={oauthLoading}
+        >
+          {busyProvider === "google" ? (
+            <ActivityIndicator color={theme.text} />
+          ) : (
+            <>
+              <Ionicons name="logo-google" size={18} color={theme.text} />
+              <Text style={styles.socialBtnText}>Continue with Google</Text>
+            </>
+          )}
+        </Pressable>
+
+        {Platform.OS === "ios" && (
+          <Pressable
+            style={styles.socialBtn}
+            onPress={() => {
+              void handleOAuth("apple");
+            }}
+            disabled={oauthLoading}
+          >
+            {busyProvider === "apple" ? (
+              <ActivityIndicator color={theme.text} />
+            ) : (
+              <>
+                <Ionicons name="logo-apple" size={18} color={theme.text} />
+                <Text style={styles.socialBtnText}>Continue with Apple</Text>
+              </>
+            )}
+          </Pressable>
+        )}
+
+        <View style={styles.dividerRow}>
+          <View style={styles.divider} />
+          <Text style={styles.dividerText}>or use email</Text>
+          <View style={styles.divider} />
+        </View>
+
         <View style={styles.card}>
           <Text style={styles.label}>Email</Text>
           <TextInput
@@ -91,16 +139,12 @@ export default function SignInScreen() {
           />
         </View>
         <Pressable style={[styles.primaryBtn, busy && { opacity: 0.5 }]} disabled={busy} onPress={submit}>
-          {busy ? <ActivityIndicator color="#0a0a0d" /> : <Text style={styles.primaryBtnText}>{mode === "signIn" ? "Sign in" : "Create account"}</Text>}
+          {busy ? <ActivityIndicator color={theme.accentForeground} /> : <Text style={styles.primaryBtnText}>{mode === "signIn" ? "Sign in" : "Create account"}</Text>}
         </Pressable>
         <Pressable onPress={() => setMode(mode === "signIn" ? "signUp" : "signIn")}>
           <Text style={styles.toggleText}>
             {mode === "signIn" ? "No account? Create one" : "Have an account? Sign in"}
           </Text>
-        </Pressable>
-        <View style={styles.divider} />
-        <Pressable style={styles.tertiaryBtn} onPress={continueAnon}>
-          <Text style={styles.tertiaryBtnText}>Continue without an account</Text>
         </Pressable>
       </View>
     </View>
@@ -113,13 +157,15 @@ const styles = StyleSheet.create({
   iconBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border },
   title: { color: theme.text, fontSize: 18, fontWeight: "700" },
   body: { padding: 24, gap: 14 },
+  socialBtn: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: theme.panel, borderWidth: 1, borderColor: theme.border, borderRadius: 14 },
+  socialBtnText: { color: theme.text, fontSize: 15, fontWeight: "600" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  divider: { flex: 1, height: 1, backgroundColor: theme.border },
+  dividerText: { color: theme.textMuted, fontSize: 12, fontFamily: theme.mono, letterSpacing: 0.6 },
   card: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 14, padding: 16, gap: 8 },
   label: { color: theme.textMuted, fontSize: 11, fontFamily: theme.mono, letterSpacing: 1, marginTop: 4 },
   input: { backgroundColor: theme.cardElevated, borderWidth: 1, borderColor: theme.border, color: theme.text, fontSize: 14, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
   primaryBtn: { alignItems: "center", justifyContent: "center", backgroundColor: theme.accent, paddingVertical: 14, borderRadius: 12 },
-  primaryBtnText: { color: "#0a0a0d", fontSize: 15, fontWeight: "700" },
+  primaryBtnText: { color: theme.accentForeground, fontSize: 15, fontWeight: "700" },
   toggleText: { color: theme.accent, fontSize: 13, textAlign: "center", paddingVertical: 6 },
-  divider: { height: 1, backgroundColor: theme.border, marginVertical: 8 },
-  tertiaryBtn: { paddingVertical: 14, alignItems: "center" },
-  tertiaryBtnText: { color: theme.textSecondary, fontSize: 13 },
 });

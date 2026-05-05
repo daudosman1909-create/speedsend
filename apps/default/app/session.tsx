@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Image, Alert, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,6 +13,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
 import { GridBackdrop } from "@/components/GridBackdrop";
+import { BrandMark } from "@/components/BrandMark";
 
 type SessionItem = NonNullable<ReturnType<typeof useQuery<typeof api.items.listSessionItems>>>[number];
 
@@ -31,6 +32,14 @@ export default function SessionScreen() {
 
   const connected = session?.status === "connected";
   const expired = session?.status === "expired" || session?.status === "disconnected";
+
+  useEffect(() => {
+    if (!token || !expired) return;
+    void (async () => {
+      await setToken(null);
+      router.replace("/welcome");
+    })();
+  }, [expired, router, setToken, token]);
 
   const sendFile = useCallback(
     async (opts: { uri: string; mimeType: string; name?: string; size?: number; itemType: "image" | "video" | "audio" | "file" | "document" | "pdf" }) => {
@@ -169,10 +178,7 @@ export default function SessionScreen() {
     <View style={styles.container}>
       <GridBackdrop />
       <View style={styles.topRow}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <View style={[styles.dot, { backgroundColor: connected ? theme.accent : theme.textMuted }]} />
-          <Text style={styles.title}>SpeedSend</Text>
-        </View>
+        <BrandMark size="sm" />
         <Pressable onPress={() => router.push("/settings")}>
           <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />
         </Pressable>
