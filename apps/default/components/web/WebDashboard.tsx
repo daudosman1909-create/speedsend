@@ -74,6 +74,20 @@ function intersectsSelectionBox(box: CanvasSelectionBox, frame: CanvasItemFrame)
     );
 }
 
+function createSelectionBox(
+    startX: number,
+    startY: number,
+    currentX: number,
+    currentY: number
+): CanvasSelectionBox {
+    return {
+        left: Math.min(startX, currentX),
+        top: Math.min(startY, currentY),
+        width: Math.abs(currentX - startX),
+        height: Math.abs(currentY - startY),
+    };
+}
+
 function getCanvasItemFrame(
     item: ItemDoc,
     index: number,
