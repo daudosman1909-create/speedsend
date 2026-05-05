@@ -8,11 +8,12 @@ import {
     Platform,
     useWindowDimensions,
     ActivityIndicator,
+    Animated,
 } from "react-native";
 import { useMutation, useQuery, useConvex } from "convex/react";
 import { useAuthActions, useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
-import { theme, radii, isLikelyUrl } from "@/lib/theme";
+import { theme, radii, isLikelyUrl, formatBytes } from "@/lib/theme";
 import { useSessionToken, detectBrowserName, detectDeviceName } from "@/lib/session-token";
 import { uploadFileBlob } from "@/lib/upload";
 import { QRCodeView } from "@/components/QRCodeView";
@@ -40,22 +41,28 @@ interface CanvasItemFrame {
     height: number;
 }
 
+const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
+
+const CANVAS_CONTROLS = [
+    { key: "Drag card", value: "Move one item or the whole selected group" },
+    { key: "Left-drag empty space", value: "Draw a box to select multiple items" },
+    { key: "Delete / Backspace", value: "Delete the current selection" },
+    { key: "Escape", value: "Clear the current selection" },
+    { key: "Middle-click + drag", value: "Pan around the canvas" },
+    { key: "Drop / Paste", value: "Send files or clipboard content fast" },
+] as const;
+
 function clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
 }
 
-function createSelectionBox(
-    startX: number,
-    startY: number,
-    endX: number,
-    endY: number
-): CanvasSelectionBox {
-    return {
-        left: Math.min(startX, endX),
-        top: Math.min(startY, endY),
-        width: Math.abs(endX - startX),
-        height: Math.abs(endY - startY),
-    };
+function formatStorageHint(savedBytes: number) {
+    const remainingBytes = Math.max(0, STORAGE_LIMIT_BYTES - savedBytes);
+    const remainingPercent = Math.max(
+        0,
+        Math.min(100, Math.round((remainingBytes / STORAGE_LIMIT_BYTES) * 100))
+    );
+    return `${remainingPercent}% left · ${formatBytes(remainingBytes)} free`;
 }
 
 function intersectsSelectionBox(box: CanvasSelectionBox, frame: CanvasItemFrame) {
@@ -98,6 +105,7 @@ export default function WebDashboard() {
     const authToken = useAuthToken();
     const isAuthed = !!authToken;
     const me = useQuery(api.users.getMe, isAuthed ? {} : "skip");
+    const savedItems = useQuery(api.items.listSavedItems, isAuthed ? {} : "skip");
 
     const sessionData = useQuery(
         api.sessions.getSessionByToken,
@@ -170,12 +178,18 @@ export default function WebDashboard() {
     const code = sessionData?.code;
     const qrToken = sessionData?.qrToken;
     const phoneName = sessionData?.phoneDeviceName;
-    const isPro = me?.isPro ?? sessionData?.isProUser ?? false;
+    const isPro = !!me?.isPro;
     const qrValue = useMemo(() => qrToken ?? "", [qrToken]);
     const formattedCode = useMemo(
         () => (code ? `${code.slice(0, 3)} ${code.slice(3)}` : ""),
         [code]
     );
+    const floatingPanel = connected;
+    const savedBytes = useMemo(
+        () => (savedItems ?? []).reduce((total, item) => total + (item.fileSize ?? 0), 0),
+        [savedItems]
+    );
+    const storageHint = useMemo(() => formatStorageHint(savedBytes), [savedBytes]);
 
     const [textDraft, setTextDraft] = useState("");
     const [selectedItemId, setSelectedItemId] = useState<Id<"sharedItems"> | null>(null);
@@ -339,7 +353,6 @@ export default function WebDashboard() {
 
     const dimensions = useWindowDimensions();
     const compact = dimensions.width < 1024;
-    const floatingPanel = connected && !compact;
 
     useEffect(() => {
         if (compact || !connected) {
@@ -475,6 +488,7 @@ export default function WebDashboard() {
                         onDelete={handleDeleteItem}
                         onDeleteSelection={handleDeleteSelection}
                         onSave={handleSaveItem}
+                        storageHint={storageHint}
                         onUpdatePosition={(id, x, y) => {
                             if (!token) return;
                             void updateItemPosition({
@@ -485,20 +499,6 @@ export default function WebDashboard() {
                             });
                         }}
                     />
-
-                    {floatingPanel && !panelOpen && (
-                        <Pressable
-                            style={styles.panelDockButton}
-                            onPress={() => setPanelOpen(true)}
-                        >
-                            <Ionicons
-                                name="phone-portrait-outline"
-                                size={15}
-                                color={theme.accentForeground}
-                            />
-                            <Text style={styles.panelDockButtonText}>Device</Text>
-                        </Pressable>
-                    )}
 
                     {panelOpen && (
                         <View
@@ -889,6 +889,7 @@ function DropCanvas({
     onDelete,
     onDeleteSelection,
     onSave,
+    storageHint,
     onUpdatePosition,
 }: {
     items: ItemDoc[];
@@ -900,6 +901,7 @@ function DropCanvas({
     onDelete: (id: Id<"sharedItems">) => void;
     onDeleteSelection: (ids: Id<"sharedItems">[]) => void;
     onSave: (id: Id<"sharedItems">) => void;
+    storageHint: string;
     onUpdatePosition: (id: Id<"sharedItems">, x: number, y: number) => void;
 }) {
     const viewportRef = useRef<View>(null);
@@ -914,6 +916,8 @@ function DropCanvas({
         deltaX: number;
         deltaY: number;
     } | null>(null);
+    const [infoOpen, setInfoOpen] = useState(false);
+    const infoAnim = useRef(new Animated.Value(0)).current;
     const panRef = useRef(pan);
     const selectedItemIdsRef = useRef<Id<"sharedItems">[]>([]);
 
@@ -937,6 +941,15 @@ function DropCanvas({
     useEffect(() => {
         selectedItemIdsRef.current = selectedItemIds;
     }, [selectedItemIds]);
+
+    useEffect(() => {
+        Animated.spring(infoAnim, {
+            toValue: infoOpen ? 1 : 0,
+            tension: 180,
+            friction: 20,
+            useNativeDriver: true,
+        }).start();
+    }, [infoAnim, infoOpen]);
 
     useEffect(() => {
         setSelectedItemIds((previousIds) => {
@@ -1174,6 +1187,7 @@ function DropCanvas({
                 setSelectedItemIds([]);
                 setSelectionBox(null);
                 setDragState(null);
+                setInfoOpen(false);
                 return;
             }
             if (
@@ -1276,15 +1290,73 @@ function DropCanvas({
                 ) : null}
             </View>
 
-            <View pointerEvents="none" style={styles.canvasHintWrap}>
-                <View style={styles.canvasHintChip}>
-                    <Text style={styles.canvasHintText}>
-                        {selectedItemIds.length > 0
-                            ? `${selectedItemIds.length} selected · drag a selected card to move · press Delete to remove`
-                            : connected
-                              ? "Drop or paste files · left-drag empty space to multi-select · middle-click and drag to move around"
-                              : "Pair a phone, then drop or paste files · left-drag empty space to multi-select · middle-click and drag to move around"}
-                    </Text>
+            <View pointerEvents="box-none" style={styles.canvasHintWrap}>
+                <Animated.View
+                    pointerEvents={infoOpen ? "auto" : "none"}
+                    style={[
+                        styles.canvasInfoCard,
+                        {
+                            opacity: infoAnim,
+                            transform: [
+                                {
+                                    translateY: infoAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [10, 0],
+                                    }),
+                                },
+                                {
+                                    scale: infoAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [0.96, 1],
+                                    }),
+                                },
+                            ],
+                        },
+                    ]}
+                >
+                    <Text style={styles.canvasInfoTitle}>Canvas controls</Text>
+                    <View style={styles.canvasInfoList}>
+                        {CANVAS_CONTROLS.map((control) => (
+                            <View key={control.key} style={styles.canvasInfoRow}>
+                                <Text style={styles.canvasInfoKey}>{control.key}</Text>
+                                <Text style={styles.canvasInfoValue}>{control.value}</Text>
+                            </View>
+                        ))}
+                    </View>
+                </Animated.View>
+
+                <View style={styles.canvasHudRow}>
+                    <View style={styles.canvasHintChip}>
+                        <Text style={styles.canvasHintText}>
+                            {selectedItemIds.length > 0
+                                ? `${selectedItemIds.length} selected · drag a selected card to move · press Delete to remove`
+                                : connected
+                                  ? "Drop or paste files · left-drag empty space to multi-select · middle-click and drag to move around"
+                                  : "Pair a phone, then drop or paste files · left-drag empty space to multi-select · middle-click and drag to move around"}
+                        </Text>
+                    </View>
+                    <View style={styles.storageChip}>
+                        <Ionicons name="server-outline" size={12} color={theme.textSecondary} />
+                        <Text style={styles.storageChipText}>Storage {storageHint}</Text>
+                    </View>
+                    <Pressable
+                        style={[styles.canvasInfoButton, infoOpen && styles.canvasInfoButtonActive]}
+                        onPress={() => setInfoOpen((open) => !open)}
+                    >
+                        <Ionicons
+                            name="information-circle-outline"
+                            size={14}
+                            color={infoOpen ? theme.text : theme.textSecondary}
+                        />
+                        <Text
+                            style={[
+                                styles.canvasInfoButtonText,
+                                infoOpen && styles.canvasInfoButtonTextActive,
+                            ]}
+                        >
+                            Info
+                        </Text>
+                    </Pressable>
                 </View>
             </View>
         </View>
@@ -1441,6 +1513,7 @@ const styles = StyleSheet.create({
         right: 16,
         bottom: 16,
         alignItems: "center",
+        gap: 10,
     },
     canvasHintChip: {
         paddingHorizontal: 12,
@@ -1449,11 +1522,95 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(15,15,19,0.88)",
         borderWidth: 1,
         borderColor: theme.border,
+        maxWidth: "100%",
     },
     canvasHintText: {
         color: theme.textSecondary,
         fontSize: 12,
         textAlign: "center",
+    },
+    canvasHudRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        flexWrap: "wrap",
+    },
+    storageChip: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: radii.pill,
+        backgroundColor: "rgba(15,15,19,0.88)",
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
+    storageChipText: {
+        color: theme.textSecondary,
+        fontSize: 12,
+        fontWeight: "600",
+    },
+    canvasInfoButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: radii.pill,
+        backgroundColor: "rgba(15,15,19,0.88)",
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
+    canvasInfoButtonActive: {
+        backgroundColor: theme.cardElevated,
+        borderColor: theme.accentBorder,
+    },
+    canvasInfoButtonText: {
+        color: theme.textSecondary,
+        fontSize: 12,
+        fontWeight: "600",
+    },
+    canvasInfoButtonTextActive: {
+        color: theme.text,
+    },
+    canvasInfoCard: {
+        width: 420,
+        maxWidth: "100%",
+        padding: 14,
+        borderRadius: 18,
+        backgroundColor: "rgba(15,15,19,0.96)",
+        borderWidth: 1,
+        borderColor: theme.border,
+        boxShadow: "0 14px 28px rgba(0,0,0,0.28)",
+    },
+    canvasInfoTitle: {
+        color: theme.text,
+        fontSize: 13,
+        fontWeight: "700",
+        marginBottom: 8,
+    },
+    canvasInfoList: {
+        gap: 8,
+    },
+    canvasInfoRow: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    canvasInfoKey: {
+        color: theme.text,
+        fontSize: 12,
+        fontWeight: "600",
+        minWidth: 132,
+    },
+    canvasInfoValue: {
+        flex: 1,
+        color: theme.textSecondary,
+        fontSize: 12,
+        lineHeight: 17,
     },
     panelLayer: {
         position: "absolute",
@@ -1681,24 +1838,6 @@ const styles = StyleSheet.create({
     upgradeSub: {
         color: theme.textSecondary,
         fontSize: 11,
-    },
-    panelDockButton: {
-        position: "absolute",
-        top: 18,
-        left: 18,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: radii.pill,
-        backgroundColor: theme.accent,
-        zIndex: 5,
-    },
-    panelDockButtonText: {
-        color: theme.accentForeground,
-        fontSize: 13,
-        fontWeight: "700",
     },
     bottomBar: {
         gap: 8,
