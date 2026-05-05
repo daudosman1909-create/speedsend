@@ -112,6 +112,12 @@ function CanvasItemComponent({
         if (!node) return;
         const body = document.body;
 
+        Array.from(actionsNode?.children ?? []).forEach((child) => {
+            if (child instanceof HTMLElement) {
+                child.dataset.canvasAction = "true";
+            }
+        });
+
         node.dataset.canvasItemRoot = "true";
         node.dataset.itemId = item._id;
 
@@ -169,7 +175,7 @@ function CanvasItemComponent({
         const onMouseDown = (event: MouseEvent) => {
             if (event.button !== 0) return;
             const target = event.target as HTMLElement | null;
-            if (target && actionsNode?.contains(target)) {
+            if (target?.closest("[data-canvas-action='true']")) {
                 return;
             }
 
@@ -222,11 +228,20 @@ function CanvasItemComponent({
                 cancelAnimationFrame(previewFrame);
                 previewFrame = null;
             }
-            clearPreview();
             unlockSelection();
-            if (!didDrag) return;
+            if (!didDrag) {
+                clearPreview();
+                return;
+            }
             suppressSelectUntilRef.current = Date.now() + 250;
             onCommitDrag(activeDragIds, currentDeltaX, currentDeltaY);
+            if (typeof requestAnimationFrame === "function") {
+                requestAnimationFrame(() => {
+                    clearPreview();
+                });
+                return;
+            }
+            clearPreview();
         };
 
         node.addEventListener("selectstart", onSelectStart);

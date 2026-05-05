@@ -41,6 +41,11 @@ interface CanvasItemFrame {
     height: number;
 }
 
+interface CanvasPositionOverride {
+    x: number;
+    y: number;
+}
+
 const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
 
 const CANVAS_CONTROLS = [
@@ -88,11 +93,21 @@ function createSelectionBox(
     };
 }
 
+function areCanvasPositionsEqual(
+    left?: CanvasPositionOverride,
+    right?: CanvasPositionOverride
+) {
+    if (!left && !right) return true;
+    if (!left || !right) return false;
+    return Math.abs(left.x - right.x) < 0.0001 && Math.abs(left.y - right.y) < 0.0001;
+}
+
 function getCanvasItemFrame(
     item: ItemDoc,
     index: number,
     canvasW: number,
-    canvasH: number
+    canvasH: number,
+    positionOverride?: CanvasPositionOverride
 ): CanvasItemFrame {
     const width = item.itemType === "image" || item.itemType === "video" ? 220 : 240;
     const height =
@@ -101,8 +116,9 @@ function getCanvasItemFrame(
             : item.itemType === "text"
               ? 160
               : 140;
-    const defaultX = item.canvasX ?? ((index * 0.18 + 0.08) % 0.7);
-    const defaultY = item.canvasY ?? (Math.floor(index / 4) * 0.25 + 0.1);
+    const defaultX = positionOverride?.x ?? item.canvasX ?? ((index * 0.18 + 0.08) % 0.7);
+    const defaultY =
+        positionOverride?.y ?? item.canvasY ?? (Math.floor(index / 4) * 0.25 + 0.1);
 
     return {
         left: Math.max(8, Math.min(canvasW - width - 8, defaultX * canvasW)),
@@ -922,6 +938,9 @@ function DropCanvas({
     const [size, setSize] = useState({ w: 0, h: 0 });
     const surfaceWidth = Math.max(1800, Math.round(size.w * 2.2));
     const surfaceHeight = Math.max(1200, Math.round(size.h * 1.9));
+    const [positionOverrides, setPositionOverrides] = useState<
+        Record<string, CanvasPositionOverride>
+    >({});
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [selectedItemIds, setSelectedItemIds] = useState<Id<"sharedItems">[]>([]);
     const [selectionBox, setSelectionBox] = useState<CanvasSelectionBox | null>(null);
@@ -933,10 +952,19 @@ function DropCanvas({
     const itemFrames = useMemo(() => {
         const frames = new Map<Id<"sharedItems">, CanvasItemFrame>();
         items.forEach((item, index) => {
-            frames.set(item._id, getCanvasItemFrame(item, index, surfaceWidth, surfaceHeight));
+            frames.set(
+                item._id,
+                getCanvasItemFrame(
+                    item,
+                    index,
+                    surfaceWidth,
+                    surfaceHeight,
+                    positionOverrides[item._id]
+                )
+            );
         });
         return frames;
-    }, [items, surfaceHeight, surfaceWidth]);
+    }, [items, positionOverrides, surfaceHeight, surfaceWidth]);
 
     const selectedItemIdSet = useMemo(
         () => new Set<Id<"sharedItems">>(selectedItemIds),
@@ -950,6 +978,38 @@ function DropCanvas({
     useEffect(() => {
         selectedItemIdsRef.current = selectedItemIds;
     }, [selectedItemIds]);
+
+    useEffect(() => {
+        setPositionOverrides((previousOverrides) => {
+            const overrideEntries = Object.entries(previousOverrides);
+            if (overrideEntries.length === 0) return previousOverrides;
+
+            const nextOverrides: Record<string, CanvasPositionOverride> = {};
+            let changed = false;
+
+            overrideEntries.forEach(([itemId, override]) => {
+                const item = items.find((candidate) => candidate._id === itemId);
+                if (!item) {
+                    changed = true;
+                    return;
+                }
+
+                const serverPosition =
+                    item.canvasX === undefined || item.canvasY === undefined
+                        ? undefined
+                        : { x: item.canvasX, y: item.canvasY };
+
+                if (areCanvasPositionsEqual(serverPosition, override)) {
+                    changed = true;
+                    return;
+                }
+
+                nextOverrides[itemId] = override;
+            });
+
+            return changed ? nextOverrides : previousOverrides;
+        });
+    }, [items]);
 
     useEffect(() => {
         Animated.spring(infoAnim, {
@@ -1021,13 +1081,32 @@ function DropCanvas({
     const handleCommitDrag = useCallback(
         (ids: Id<"sharedItems">[], deltaX: number, deltaY: number) => {
             const nextDelta = clampGroupDelta(ids, deltaX, deltaY);
+            if (nextDelta.x === 0 && nextDelta.y === 0) return;
+
+            const nextOverrides: Record<string, CanvasPositionOverride> = {};
             ids.forEach((id) => {
                 const frame = itemFrames.get(id);
                 if (!frame) return;
+                nextOverrides[id] = {
+                    x: (frame.left + nextDelta.x) / surfaceWidth,
+                    y: (frame.top + nextDelta.y) / surfaceHeight,
+                };
+            });
+
+            if (Object.keys(nextOverrides).length === 0) return;
+
+            setPositionOverrides((previousOverrides) => ({
+                ...previousOverrides,
+                ...nextOverrides,
+            }));
+
+            ids.forEach((id) => {
+                const nextPosition = nextOverrides[id];
+                if (!nextPosition) return;
                 onUpdatePosition(
                     id,
-                    (frame.left + nextDelta.x) / surfaceWidth,
-                    (frame.top + nextDelta.y) / surfaceHeight
+                    nextPosition.x,
+                    nextPosition.y
                 );
             });
         },
