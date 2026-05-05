@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     Pressable,
-    ScrollView,
     TextInput,
     Platform,
     useWindowDimensions,
@@ -26,6 +25,71 @@ import { UpgradeModal } from "./UpgradeModal";
 type ItemDoc = NonNullable<
     ReturnType<typeof useQuery<typeof api.items.listSessionItems>>
 >[number];
+
+interface CanvasSelectionBox {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
+interface CanvasItemFrame {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function createSelectionBox(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number
+): CanvasSelectionBox {
+    return {
+        left: Math.min(startX, endX),
+        top: Math.min(startY, endY),
+        width: Math.abs(endX - startX),
+        height: Math.abs(endY - startY),
+    };
+}
+
+function intersectsSelectionBox(box: CanvasSelectionBox, frame: CanvasItemFrame) {
+    return !(
+        box.left + box.width < frame.left ||
+        box.left > frame.left + frame.width ||
+        box.top + box.height < frame.top ||
+        box.top > frame.top + frame.height
+    );
+}
+
+function getCanvasItemFrame(
+    item: ItemDoc,
+    index: number,
+    canvasW: number,
+    canvasH: number
+): CanvasItemFrame {
+    const width = item.itemType === "image" || item.itemType === "video" ? 220 : 240;
+    const height =
+        item.itemType === "image" || item.itemType === "video"
+            ? 200
+            : item.itemType === "text"
+              ? 160
+              : 140;
+    const defaultX = item.canvasX ?? ((index * 0.18 + 0.08) % 0.7);
+    const defaultY = item.canvasY ?? (Math.floor(index / 4) * 0.25 + 0.1);
+
+    return {
+        left: Math.max(8, Math.min(canvasW - width - 8, defaultX * canvasW)),
+        top: Math.max(8, Math.min(canvasH - height - 8, defaultY * canvasH)),
+        width,
+        height,
+    };
+}
 
 export default function WebDashboard() {
     const { token, setToken, loading: tokenLoading } = useSessionToken();
@@ -226,6 +290,17 @@ export default function WebDashboard() {
         await newCode({ sessionToken: token });
     }, [token, newCode]);
 
+    useEffect(() => {
+        if (!token || connected) return;
+        if (!code || !qrToken) {
+            void newCode({ sessionToken: token }).catch(() => {});
+        }
+        const intervalId = setInterval(() => {
+            void newCode({ sessionToken: token }).catch(() => {});
+        }, 30_000);
+        return () => clearInterval(intervalId);
+    }, [code, connected, newCode, qrToken, token]);
+
     const handleCopyCode = useCallback(async () => {
         if (!code || typeof navigator === "undefined" || !navigator.clipboard) return;
         await navigator.clipboard.writeText(code);
@@ -247,6 +322,19 @@ export default function WebDashboard() {
             if (selectedItemId === id) setSelectedItemId(null);
         },
         [token, deleteItem, selectedItemId]
+    );
+
+    const handleDeleteSelection = useCallback(
+        async (ids: Id<"sharedItems">[]) => {
+            if (!token || ids.length === 0) return;
+            await Promise.all(
+                ids.map((id) => deleteItem({ sessionToken: token, itemId: id }))
+            );
+            if (selectedItemId && ids.includes(selectedItemId)) {
+                setSelectedItemId(null);
+            }
+        },
+        [deleteItem, selectedItemId, token]
     );
 
     const dimensions = useWindowDimensions();
@@ -385,6 +473,7 @@ export default function WebDashboard() {
                         onDropFiles={sendFiles}
                         onSelect={(id) => setSelectedItemId(id)}
                         onDelete={handleDeleteItem}
+                        onDeleteSelection={handleDeleteSelection}
                         onSave={handleSaveItem}
                         onUpdatePosition={(id, x, y) => {
                             if (!token) return;
@@ -649,7 +738,7 @@ function ConnectionPanel({
                         <Text selectable style={styles.codeText}>
                             {formattedCode || "------"}
                         </Text>
-                        <Text style={styles.codeSub}>Enter this in the SpeedSend app</Text>
+                        <Text style={styles.codeSub}>Enter this in the SpeedSend app · refreshes every 30s</Text>
                         <View style={styles.codeButtonsRow}>
                             <SmallButton
                                 icon="copy-outline"
@@ -798,6 +887,7 @@ function DropCanvas({
     onDropFiles,
     onSelect,
     onDelete,
+    onDeleteSelection,
     onSave,
     onUpdatePosition,
 }: {
@@ -808,6 +898,7 @@ function DropCanvas({
     onDropFiles: (files: File[]) => void;
     onSelect: (id: Id<"sharedItems">) => void;
     onDelete: (id: Id<"sharedItems">) => void;
+    onDeleteSelection: (ids: Id<"sharedItems">[]) => void;
     onSave: (id: Id<"sharedItems">) => void;
     onUpdatePosition: (id: Id<"sharedItems">, x: number, y: number) => void;
 }) {
@@ -816,11 +907,43 @@ function DropCanvas({
     const surfaceWidth = Math.max(1800, Math.round(size.w * 2.2));
     const surfaceHeight = Math.max(1200, Math.round(size.h * 1.9));
     const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [selectedItemIds, setSelectedItemIds] = useState<Id<"sharedItems">[]>([]);
+    const [selectionBox, setSelectionBox] = useState<CanvasSelectionBox | null>(null);
+    const [dragState, setDragState] = useState<{
+        ids: Id<"sharedItems">[];
+        deltaX: number;
+        deltaY: number;
+    } | null>(null);
     const panRef = useRef(pan);
+    const selectedItemIdsRef = useRef<Id<"sharedItems">[]>([]);
+
+    const itemFrames = useMemo(() => {
+        const frames = new Map<Id<"sharedItems">, CanvasItemFrame>();
+        items.forEach((item, index) => {
+            frames.set(item._id, getCanvasItemFrame(item, index, surfaceWidth, surfaceHeight));
+        });
+        return frames;
+    }, [items, surfaceHeight, surfaceWidth]);
+
+    const selectedItemIdSet = useMemo(
+        () => new Set<Id<"sharedItems">>(selectedItemIds),
+        [selectedItemIds]
+    );
 
     useEffect(() => {
         panRef.current = pan;
     }, [pan]);
+
+    useEffect(() => {
+        selectedItemIdsRef.current = selectedItemIds;
+    }, [selectedItemIds]);
+
+    useEffect(() => {
+        setSelectedItemIds((previousIds) => {
+            const nextIds = previousIds.filter((id) => itemFrames.has(id));
+            return nextIds.length === previousIds.length ? previousIds : nextIds;
+        });
+    }, [itemFrames]);
 
     useEffect(() => {
         if (!size.w || !size.h) return;
@@ -832,6 +955,69 @@ function DropCanvas({
         });
     }, [size.w, size.h, surfaceWidth, surfaceHeight]);
 
+    const clampGroupDelta = useCallback(
+        (ids: Id<"sharedItems">[], deltaX: number, deltaY: number) => {
+            let minLeft = Number.POSITIVE_INFINITY;
+            let minTop = Number.POSITIVE_INFINITY;
+            let maxRight = Number.NEGATIVE_INFINITY;
+            let maxBottom = Number.NEGATIVE_INFINITY;
+
+            ids.forEach((id) => {
+                const frame = itemFrames.get(id);
+                if (!frame) return;
+                minLeft = Math.min(minLeft, frame.left);
+                minTop = Math.min(minTop, frame.top);
+                maxRight = Math.max(maxRight, frame.left + frame.width);
+                maxBottom = Math.max(maxBottom, frame.top + frame.height);
+            });
+
+            if (!Number.isFinite(minLeft) || !Number.isFinite(minTop)) {
+                return { x: deltaX, y: deltaY };
+            }
+
+            return {
+                x: clamp(deltaX, 8 - minLeft, surfaceWidth - 8 - maxRight),
+                y: clamp(deltaY, 8 - minTop, surfaceHeight - 8 - maxBottom),
+            };
+        },
+        [itemFrames, surfaceHeight, surfaceWidth]
+    );
+
+    const handleActivateSelection = useCallback((id: Id<"sharedItems">) => {
+        setSelectedItemIds((previousIds) =>
+            previousIds.length === 1 && previousIds[0] === id ? previousIds : [id]
+        );
+    }, []);
+
+    const handlePreviewDrag = useCallback(
+        (ids: Id<"sharedItems">[], deltaX: number, deltaY: number) => {
+            if (ids.length === 0) {
+                setDragState(null);
+                return;
+            }
+            const nextDelta = clampGroupDelta(ids, deltaX, deltaY);
+            setDragState({ ids, deltaX: nextDelta.x, deltaY: nextDelta.y });
+        },
+        [clampGroupDelta]
+    );
+
+    const handleCommitDrag = useCallback(
+        (ids: Id<"sharedItems">[], deltaX: number, deltaY: number) => {
+            const nextDelta = clampGroupDelta(ids, deltaX, deltaY);
+            setDragState(null);
+            ids.forEach((id) => {
+                const frame = itemFrames.get(id);
+                if (!frame) return;
+                onUpdatePosition(
+                    id,
+                    (frame.left + nextDelta.x) / surfaceWidth,
+                    (frame.top + nextDelta.y) / surfaceHeight
+                );
+            });
+        },
+        [clampGroupDelta, itemFrames, onUpdatePosition, surfaceHeight, surfaceWidth]
+    );
+
     useEffect(() => {
         if (Platform.OS !== "web" || typeof window === "undefined") return;
         const node = viewportRef.current as unknown as HTMLElement | null;
@@ -841,6 +1027,14 @@ function DropCanvas({
             x: Math.max(Math.min(0, next.x), Math.min(0, size.w - surfaceWidth)),
             y: Math.max(Math.min(0, next.y), Math.min(0, size.h - surfaceHeight)),
         });
+
+        const getSurfacePoint = (clientX: number, clientY: number) => {
+            const rect = node.getBoundingClientRect();
+            return {
+                x: clamp(clientX - rect.left - panRef.current.x, 0, surfaceWidth),
+                y: clamp(clientY - rect.top - panRef.current.y, 0, surfaceHeight),
+            };
+        };
 
         const onDragOver = (event: DragEvent) => {
             event.preventDefault();
@@ -862,36 +1056,135 @@ function DropCanvas({
         };
 
         let panning = false;
+        let selecting = false;
+        let didSelect = false;
         let startX = 0;
         let startY = 0;
         let basePan = panRef.current;
+        let selectionStart = { x: 0, y: 0 };
+        const selectionThreshold = 4;
 
         const onMouseDown = (event: MouseEvent) => {
-            if (event.button !== 1) return;
-            panning = true;
+            if (event.button === 1) {
+                panning = true;
+                startX = event.clientX;
+                startY = event.clientY;
+                basePan = panRef.current;
+                node.style.cursor = "grabbing";
+                event.preventDefault();
+                return;
+            }
+
+            if (event.button !== 0) return;
+            const target = event.target as HTMLElement | null;
+            if (target?.closest("[data-canvas-item-root='true']")) return;
+            selecting = true;
+            didSelect = false;
             startX = event.clientX;
             startY = event.clientY;
-            basePan = panRef.current;
-            node.style.cursor = "grabbing";
+            selectionStart = getSurfacePoint(event.clientX, event.clientY);
+            setDragState(null);
+            setSelectionBox({
+                left: selectionStart.x,
+                top: selectionStart.y,
+                width: 0,
+                height: 0,
+            });
             event.preventDefault();
         };
+
         const onMouseMove = (event: MouseEvent) => {
-            if (!panning) return;
-            event.preventDefault();
-            setPan(
-                clampPan({
-                    x: basePan.x + (event.clientX - startX),
-                    y: basePan.y + (event.clientY - startY),
-                })
+            if (panning) {
+                event.preventDefault();
+                setPan(
+                    clampPan({
+                        x: basePan.x + (event.clientX - startX),
+                        y: basePan.y + (event.clientY - startY),
+                    })
+                );
+                return;
+            }
+
+            if (!selecting) return;
+            const nextPoint = getSurfacePoint(event.clientX, event.clientY);
+            if (
+                !didSelect &&
+                Math.hypot(event.clientX - startX, event.clientY - startY) >=
+                    selectionThreshold
+            ) {
+                didSelect = true;
+            }
+            setSelectionBox(
+                createSelectionBox(
+                    selectionStart.x,
+                    selectionStart.y,
+                    nextPoint.x,
+                    nextPoint.y
+                )
             );
+            event.preventDefault();
         };
-        const onMouseUp = () => {
-            if (!panning) return;
-            panning = false;
-            node.style.cursor = "default";
+
+        const onMouseUp = (event: MouseEvent) => {
+            if (panning) {
+                panning = false;
+                node.style.cursor = "default";
+                return;
+            }
+
+            if (!selecting) return;
+            selecting = false;
+            const nextPoint = getSurfacePoint(event.clientX, event.clientY);
+            const nextSelection = createSelectionBox(
+                selectionStart.x,
+                selectionStart.y,
+                nextPoint.x,
+                nextPoint.y
+            );
+            if (!didSelect) {
+                setSelectedItemIds([]);
+                setSelectionBox(null);
+                return;
+            }
+            const nextSelectedIds = items
+                .filter((item) => {
+                    const frame = itemFrames.get(item._id);
+                    return frame ? intersectsSelectionBox(nextSelection, frame) : false;
+                })
+                .map((item) => item._id);
+            setSelectedItemIds(nextSelectedIds);
+            setSelectionBox(null);
         };
+
         const onAuxClick = (event: MouseEvent) => {
             if (event.button === 1) event.preventDefault();
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            const target = event.target;
+            if (
+                target instanceof HTMLElement &&
+                (target.tagName === "INPUT" ||
+                    target.tagName === "TEXTAREA" ||
+                    target.isContentEditable)
+            ) {
+                return;
+            }
+            if (event.key === "Escape") {
+                setSelectedItemIds([]);
+                setSelectionBox(null);
+                setDragState(null);
+                return;
+            }
+            if (
+                (event.key === "Delete" || event.key === "Backspace") &&
+                selectedItemIdsRef.current.length > 0
+            ) {
+                event.preventDefault();
+                const ids = [...selectedItemIdsRef.current];
+                setSelectedItemIds([]);
+                void onDeleteSelection(ids);
+            }
         };
 
         node.addEventListener("dragover", onDragOver);
@@ -901,6 +1194,7 @@ function DropCanvas({
         node.addEventListener("auxclick", onAuxClick);
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
+        window.addEventListener("keydown", onKeyDown);
 
         return () => {
             node.removeEventListener("dragover", onDragOver);
@@ -910,8 +1204,19 @@ function DropCanvas({
             node.removeEventListener("auxclick", onAuxClick);
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
+            window.removeEventListener("keydown", onKeyDown);
         };
-    }, [onDropFiles, setDragOver, size.w, size.h, surfaceWidth, surfaceHeight]);
+    }, [
+        itemFrames,
+        items,
+        onDeleteSelection,
+        onDropFiles,
+        setDragOver,
+        size.h,
+        size.w,
+        surfaceHeight,
+        surfaceWidth,
+    ]);
 
     return (
         <View
@@ -920,10 +1225,7 @@ function DropCanvas({
                 const { width, height } = event.nativeEvent.layout;
                 setSize({ w: width, h: height });
             }}
-            style={[
-                styles.canvas,
-                dragOver && styles.canvasDragOver,
-            ]}
+            style={[styles.canvas, dragOver && styles.canvasDragOver]}
         >
             <View
                 style={[
@@ -943,20 +1245,45 @@ function DropCanvas({
                         index={index}
                         canvasW={surfaceWidth}
                         canvasH={surfaceHeight}
+                        isSelected={selectedItemIdSet.has(item._id)}
+                        selectedItemIds={selectedItemIds}
+                        dragOffset={
+                            dragState?.ids.includes(item._id)
+                                ? { x: dragState.deltaX, y: dragState.deltaY }
+                                : undefined
+                        }
                         onSelect={() => onSelect(item._id)}
+                        onActivateSelection={handleActivateSelection}
                         onDelete={() => onDelete(item._id)}
                         onSave={() => onSave(item._id)}
-                        onMove={(nextX, nextY) => onUpdatePosition(item._id, nextX, nextY)}
+                        onPreviewDrag={handlePreviewDrag}
+                        onCommitDrag={handleCommitDrag}
                     />
                 ))}
+                {selectionBox ? (
+                    <View
+                        pointerEvents="none"
+                        style={[
+                            styles.selectionBox,
+                            {
+                                left: selectionBox.left,
+                                top: selectionBox.top,
+                                width: selectionBox.width,
+                                height: selectionBox.height,
+                            },
+                        ]}
+                    />
+                ) : null}
             </View>
 
             <View pointerEvents="none" style={styles.canvasHintWrap}>
                 <View style={styles.canvasHintChip}>
                     <Text style={styles.canvasHintText}>
-                        {connected
-                            ? "Drop or paste files · middle-click and drag to move around"
-                            : "Pair a phone, then drop or paste files · middle-click and drag to move around"}
+                        {selectedItemIds.length > 0
+                            ? `${selectedItemIds.length} selected · drag a selected card to move · press Delete to remove`
+                            : connected
+                              ? "Drop or paste files · left-drag empty space to multi-select · middle-click and drag to move around"
+                              : "Pair a phone, then drop or paste files · left-drag empty space to multi-select · middle-click and drag to move around"}
                     </Text>
                 </View>
             </View>
@@ -1087,6 +1414,12 @@ const styles = StyleSheet.create({
         position: "absolute",
         top: 0,
         left: 0,
+    },
+    selectionBox: {
+        position: "absolute",
+        borderWidth: 1,
+        borderColor: theme.accentBorder,
+        backgroundColor: "rgba(255,255,255,0.08)",
     },
     dotGrid: {
         position: "absolute",

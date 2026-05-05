@@ -22,10 +22,15 @@ interface Props {
     index: number;
     canvasW: number;
     canvasH: number;
+    isSelected: boolean;
+    selectedItemIds: ItemDoc["_id"][];
+    dragOffset?: { x: number; y: number };
     onSelect: () => void;
+    onActivateSelection: (id: ItemDoc["_id"]) => void;
     onDelete: () => void;
     onSave: () => void;
-    onMove: (x: number, y: number) => void;
+    onPreviewDrag: (ids: ItemDoc["_id"][], deltaX: number, deltaY: number) => void;
+    onCommitDrag: (ids: ItemDoc["_id"][], deltaX: number, deltaY: number) => void;
 }
 
 function iconForType(t: ItemDoc["itemType"]): React.ComponentProps<typeof Ionicons>["name"] {
@@ -54,10 +59,15 @@ export function CanvasItem({
     index,
     canvasW,
     canvasH,
+    isSelected,
+    selectedItemIds,
+    dragOffset,
     onSelect,
+    onActivateSelection,
     onDelete,
     onSave,
-    onMove,
+    onPreviewDrag,
+    onCommitDrag,
 }: Props) {
     const cardW = item.itemType === "image" || item.itemType === "video" ? 220 : 240;
     const cardH =
@@ -84,65 +94,75 @@ export function CanvasItem({
         }).start();
     }, [fade]);
 
-    // Web drag
     const ref = useRef<View>(null);
     useEffect(() => {
         if (Platform.OS !== "web") return;
         const node = (ref.current as unknown as HTMLElement | null) ?? null;
         if (!node) return;
+
+        node.dataset.canvasItemRoot = "true";
+        node.dataset.itemId = item._id;
+
         const dragThreshold = 6;
         let dragging = false;
         let didDrag = false;
         let startX = 0;
         let startY = 0;
-        let baseLeft = 0;
-        let baseTop = 0;
-        const onMouseDown = (e: MouseEvent) => {
-            if (e.button !== 0) return;
-            const target = e.target as HTMLElement;
+        let currentDeltaX = 0;
+        let currentDeltaY = 0;
+        let activeDragIds: ItemDoc["_id"][] = [];
+
+        const onMouseDown = (event: MouseEvent) => {
+            if (event.button !== 0) return;
+            const target = event.target as HTMLElement | null;
             if (
-                target &&
-                (target.tagName === "BUTTON" ||
-                    target.closest("button") ||
-                    target.closest("[data-noclick]"))
+                target?.closest(
+                    "button, [role='button'], [data-noclick='true']"
+                )
             ) {
                 return;
             }
+
             dragging = true;
             didDrag = false;
-            startX = e.clientX;
-            startY = e.clientY;
-            baseLeft = parseFloat((node.style.left || `${left}px`).replace("px", ""));
-            baseTop = parseFloat((node.style.top || `${top}px`).replace("px", ""));
+            startX = event.clientX;
+            startY = event.clientY;
+            currentDeltaX = 0;
+            currentDeltaY = 0;
+            activeDragIds =
+                isSelected && selectedItemIds.length > 0
+                    ? selectedItemIds
+                    : [item._id];
+            if (!isSelected) onActivateSelection(item._id);
             node.style.cursor = "grabbing";
-            e.preventDefault();
-            e.stopPropagation();
+            event.preventDefault();
+            event.stopPropagation();
         };
-        const onMouseMove = (e: MouseEvent) => {
+
+        const onMouseMove = (event: MouseEvent) => {
             if (!dragging) return;
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            if (!didDrag && Math.hypot(deltaX, deltaY) >= dragThreshold) {
+            currentDeltaX = event.clientX - startX;
+            currentDeltaY = event.clientY - startY;
+            if (
+                !didDrag &&
+                Math.hypot(currentDeltaX, currentDeltaY) >= dragThreshold
+            ) {
                 didDrag = true;
             }
             if (!didDrag) return;
-            const nx = baseLeft + deltaX;
-            const ny = baseTop + deltaY;
-            node.style.left = `${nx}px`;
-            node.style.top = `${ny}px`;
+            onPreviewDrag(activeDragIds, currentDeltaX, currentDeltaY);
+            event.preventDefault();
         };
+
         const onMouseUp = () => {
             if (!dragging) return;
             dragging = false;
             node.style.cursor = "grab";
             if (!didDrag) return;
             suppressSelectUntilRef.current = Date.now() + 250;
-            const finalLeft = parseFloat(node.style.left.replace("px", ""));
-            const finalTop = parseFloat(node.style.top.replace("px", ""));
-            if (canvasW > 0 && canvasH > 0) {
-                onMove(finalLeft / canvasW, finalTop / canvasH);
-            }
+            onCommitDrag(activeDragIds, currentDeltaX, currentDeltaY);
         };
+
         node.addEventListener("mousedown", onMouseDown);
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
@@ -151,13 +171,14 @@ export function CanvasItem({
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
         };
-    }, [canvasW, canvasH, left, top, onMove]);
+    }, [isSelected, item._id, onActivateSelection, onCommitDrag, onPreviewDrag, selectedItemIds]);
 
     return (
         <Animated.View
             ref={ref as React.Ref<React.ComponentRef<typeof Animated.View>>}
             style={[
                 styles.card,
+                isSelected && styles.cardSelected,
                 {
                     left,
                     top,
@@ -165,6 +186,8 @@ export function CanvasItem({
                     minHeight: cardH,
                     opacity: fade,
                     transform: [
+                        { translateX: dragOffset?.x ?? 0 },
+                        { translateY: dragOffset?.y ?? 0 },
                         {
                             scale: fade.interpolate({
                                 inputRange: [0, 1],
@@ -305,7 +328,7 @@ export function CanvasItem({
                         </Text>
                     </View>
                 </View>
-                <View style={styles.actions} {...({} as object)}>
+                <View style={styles.actions}>
                     <Pressable
                         style={styles.actionBtn}
                         onPress={async () => {
@@ -372,6 +395,10 @@ const styles = StyleSheet.create({
         overflow: "hidden",
         boxShadow: "0 8px 22px rgba(0,0,0,0.45)",
         ...(Platform.OS === "web" ? ({ cursor: "grab" } as unknown as object) : {}),
+    },
+    cardSelected: {
+        borderColor: theme.accentBorder,
+        boxShadow: "0 0 0 1px rgba(255,255,255,0.35), 0 12px 26px rgba(0,0,0,0.35)",
     },
     previewArea: { width: "100%", height: 110, backgroundColor: theme.cardElevated },
     preview: { width: "100%", height: "100%" },
