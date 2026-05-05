@@ -154,7 +154,7 @@ export default function ConnectScreen() {
           </View>
         ) : (
           <View style={styles.codeCard}>
-            <Text style={styles.codeHint}>Enter the 6-character code shown on Relay in your browser.</Text>
+            <Text style={styles.codeHint}>Enter the 6-character code shown on SpeedSend in your browser.</Text>
             <TextInput
               style={styles.codeInput}
               value={code}
@@ -175,7 +175,7 @@ export default function ConnectScreen() {
           </View>
         )}
         <Text style={styles.helpText}>
-          Open Relay on your computer at the website and scan the QR or enter the code.
+          Open SpeedSend on your computer at the website and scan the QR or enter the code.
         </Text>
       </ScrollView>
     </View>

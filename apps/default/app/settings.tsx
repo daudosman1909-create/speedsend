@@ -84,7 +84,7 @@ export default function SettingsScreen() {
               <Ionicons name={me?.isPro ? "sparkles" : "flash-outline"} size={16} color={theme.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>{me?.isPro ? "Relay Pro" : "Free plan"}</Text>
+              <Text style={styles.rowTitle}>{me?.isPro ? "SpeedSend Pro" : "Free plan"}</Text>
               <Text style={styles.rowSub}>{me?.isPro ? "€2.50/month · saved storage" : "Temporary transfers only"}</Text>
             </View>
             {me?.isPro ? (
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   sectionLabel: { color: theme.textMuted, fontSize: 10, fontFamily: theme.mono, letterSpacing: 1.4 },
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.accent, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  avatarText: { color: theme.accentForeground, fontWeight: "700", fontSize: 14 },
   iconBox: { width: 32, height: 32, borderRadius: 8, backgroundColor: theme.cardElevated, borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center" },
   rowTitle: { color: theme.text, fontSize: 14, fontWeight: "600" },
   rowSub: { color: theme.textMuted, fontSize: 12 },

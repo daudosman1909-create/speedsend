@@ -23,7 +23,9 @@ import { CanvasItem } from "./CanvasItem";
 import { ItemDetailModal } from "./ItemDetailModal";
 import { UpgradeModal } from "./UpgradeModal";
 
-type ItemDoc = NonNullable<ReturnType<typeof useQuery<typeof api.items.listSessionItems>>>[number];
+type ItemDoc = NonNullable<
+    ReturnType<typeof useQuery<typeof api.items.listSessionItems>>
+>[number];
 
 export default function WebDashboard() {
     const { token, setToken, loading: tokenLoading } = useSessionToken();
@@ -79,21 +81,20 @@ export default function WebDashboard() {
     useEffect(() => {
         if (typeof window === "undefined") return;
         const handler = () => {
-            if (token) {
-                try {
-                    const url = (process.env.EXPO_PUBLIC_CONVEX_URL ?? "").replace(/\/$/, "");
-                    const body = JSON.stringify({
-                        path: "sessions:disconnectSession",
-                        args: { sessionToken: token },
-                        format: "json",
-                    });
-                    if (navigator.sendBeacon && url) {
-                        const blob = new Blob([body], { type: "application/json" });
-                        navigator.sendBeacon(`${url}/api/mutation`, blob);
-                    }
-                } catch {
-                    // ignore
+            if (!token) return;
+            try {
+                const url = (process.env.EXPO_PUBLIC_CONVEX_URL ?? "").replace(/\/$/, "");
+                const body = JSON.stringify({
+                    path: "sessions:disconnectSession",
+                    args: { sessionToken: token },
+                    format: "json",
+                });
+                if (navigator.sendBeacon && url) {
+                    const blob = new Blob([body], { type: "application/json" });
+                    navigator.sendBeacon(`${url}/api/mutation`, blob);
                 }
+            } catch {
+                // ignore
             }
         };
         window.addEventListener("beforeunload", handler);
@@ -117,7 +118,7 @@ export default function WebDashboard() {
     const [upgradeOpen, setUpgradeOpen] = useState(false);
     const [uploadingCount, setUploadingCount] = useState(0);
     const [dragOver, setDragOver] = useState(false);
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [panelOpen, setPanelOpen] = useState(true);
     const textInputRef = useRef<TextInput>(null);
 
     const sendText = useCallback(
@@ -153,7 +154,9 @@ export default function WebDashboard() {
                                 ? "audio"
                                 : mime === "application/pdf"
                                   ? "pdf"
-                                  : mime.includes("text") || mime.includes("document") || mime.includes("word")
+                                  : mime.includes("text") ||
+                                      mime.includes("document") ||
+                                      mime.includes("word")
                                     ? "document"
                                     : "file";
                         await sendItem({
@@ -232,9 +235,7 @@ export default function WebDashboard() {
         async (id: Id<"sharedItems">) => {
             if (!token) return;
             const result = await saveItem({ sessionToken: token, itemId: id });
-            if (result.needsUpgrade) {
-                setUpgradeOpen(true);
-            }
+            if (result.needsUpgrade) setUpgradeOpen(true);
         },
         [token, saveItem]
     );
@@ -250,14 +251,14 @@ export default function WebDashboard() {
 
     const dimensions = useWindowDimensions();
     const compact = dimensions.width < 1024;
-    const useFloatingSidebar = connected && !compact;
+    const floatingPanel = connected && !compact;
 
     useEffect(() => {
         if (compact || !connected) {
-            setSidebarOpen(true);
+            setPanelOpen(true);
             return;
         }
-        setSidebarOpen(false);
+        setPanelOpen(false);
     }, [compact, connected]);
 
     const focusComposer = useCallback(() => {
@@ -288,13 +289,13 @@ export default function WebDashboard() {
 
     const handleShareAction = useCallback(async () => {
         const shareText = formattedCode
-            ? `Open Relay on your phone and connect with code ${formattedCode}.`
-            : "Open Relay on your phone and scan the QR code shown in Relay web.";
+            ? `Open SpeedSend on your phone and connect with code ${formattedCode}.`
+            : "Open SpeedSend on your phone and scan the QR code shown in SpeedSend web.";
 
         try {
             if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
                 await navigator.share({
-                    title: "Relay pairing",
+                    title: "SpeedSend pairing",
                     text: shareText,
                 });
             } else if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -304,10 +305,8 @@ export default function WebDashboard() {
             // ignore aborted shares
         }
 
-        if (useFloatingSidebar) {
-            setSidebarOpen(true);
-        }
-    }, [formattedCode, useFloatingSidebar]);
+        if (floatingPanel) setPanelOpen(true);
+    }, [formattedCode, floatingPanel]);
 
     const openFilePicker = useCallback(
         (accept?: string) => {
@@ -325,132 +324,22 @@ export default function WebDashboard() {
         [sendFiles]
     );
 
-    const handleConnectAction = useCallback(async () => {
-        if (useFloatingSidebar) {
-            setSidebarOpen((open) => !open);
-            return;
-        }
+    const handleConnectAction = useCallback(() => {
         if (connected) {
-            await handleDisconnect();
+            setPanelOpen((open) => !open);
             return;
         }
-        await handleNewCode();
-    }, [connected, handleDisconnect, handleNewCode, useFloatingSidebar]);
-
-    const sidebarContent = (
-        <>
-            <View style={styles.sidebarHeaderRow}>
-                <Text style={styles.sectionLabel}>CONNECTION</Text>
-                {useFloatingSidebar && (
-                    <Pressable
-                        style={styles.sidebarCloseButton}
-                        onPress={() => setSidebarOpen(false)}
-                    >
-                        <Ionicons name="close" size={14} color={theme.textSecondary} />
-                    </Pressable>
-                )}
-            </View>
-
-            <View style={styles.statusRow}>
-                <View
-                    style={[
-                        styles.pulseDot,
-                        connected
-                            ? { backgroundColor: theme.accent }
-                            : { backgroundColor: theme.textMuted },
-                    ]}
-                />
-                <Text style={styles.statusText}>
-                    {connected ? `Connected to ${phoneName ?? "phone"}` : "Waiting for device…"}
-                </Text>
-            </View>
-
-            <View style={styles.qrCard}>
-                {qrValue ? (
-                    <View style={{ position: "relative", alignItems: "center" }}>
-                        <QRCodeView value={qrValue} size={196} />
-                    </View>
-                ) : (
-                    <ActivityIndicator color={theme.accent} />
-                )}
-                <Text style={styles.qrHelper}>Scan with Relay on your phone</Text>
-            </View>
-
-            <View style={styles.codeCard}>
-                <Text style={styles.codeLabel}>Or enter code on your phone</Text>
-                <Text selectable style={styles.codeText}>
-                    {formattedCode || "------"}
-                </Text>
-                <Text style={styles.codeSub}>Enter this in the Relay app</Text>
-                <View style={styles.codeButtonsRow}>
-                    <SmallButton
-                        icon="copy-outline"
-                        label="Copy code"
-                        onPress={() => {
-                            void handleCopyCode();
-                        }}
-                    />
-                    <SmallButton
-                        icon="refresh"
-                        label="New code"
-                        onPress={() => {
-                            void handleNewCode();
-                        }}
-                    />
-                </View>
-                {connected && (
-                    <Pressable style={styles.disconnectBtn} onPress={() => void handleDisconnect()}>
-                        <Ionicons
-                            name="close-circle-outline"
-                            size={14}
-                            color={theme.danger}
-                        />
-                        <Text style={styles.disconnectText}>Disconnect</Text>
-                    </Pressable>
-                )}
-            </View>
-
-            <View style={styles.promoCard}>
-                <View style={styles.promoIcon}>
-                    <Ionicons name="phone-portrait-outline" size={16} color={theme.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.promoTitle}>Relay for iOS & Android</Text>
-                </View>
-                <Pressable
-                    style={styles.promoCta}
-                    onPress={() => {
-                        void handleShareAction();
-                    }}
-                >
-                    <Text style={styles.promoCtaText}>Share setup →</Text>
-                </Pressable>
-            </View>
-
-            {!isPro && (
-                <Pressable
-                    style={styles.upgradeCard}
-                    onPress={() => setUpgradeOpen(true)}
-                >
-                    <Ionicons name="sparkles" size={16} color={theme.accent} />
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.upgradeTitle}>Keep your storage</Text>
-                        <Text style={styles.upgradeSub}>€2.50/mo · save files &amp; history</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={theme.accent} />
-                </Pressable>
-            )}
-        </>
-    );
+        setPanelOpen(true);
+    }, [connected]);
 
     return (
         <View style={styles.root}>
             <View style={styles.topbar}>
                 <View style={styles.brandRow}>
                     <View style={styles.logoSquare}>
-                        <Ionicons name="flash" size={18} color="#fff" />
+                        <Ionicons name="paper-plane-outline" size={16} color={theme.accentForeground} />
                     </View>
-                    <Text style={styles.brandText}>Relay</Text>
+                    <Text style={styles.brandText}>SpeedSend</Text>
                 </View>
                 <View style={styles.topActions}>
                     <PillButton
@@ -461,12 +350,10 @@ export default function WebDashboard() {
                         }}
                     />
                     <PillButton
-                        icon={connected ? "flash" : "link-outline"}
-                        label={useFloatingSidebar ? (sidebarOpen ? "Hide panel" : "Connect") : connected ? "Connected" : "Refresh code"}
-                        active={connected || (useFloatingSidebar && sidebarOpen)}
-                        onPress={() => {
-                            void handleConnectAction();
-                        }}
+                        icon={connected ? "phone-portrait-outline" : "qr-code-outline"}
+                        label={connected ? (panelOpen ? "Hide info" : "Device") : "Pair"}
+                        active={connected || panelOpen}
+                        onPress={handleConnectAction}
                     />
                     <PillButton
                         icon="share-outline"
@@ -477,57 +364,19 @@ export default function WebDashboard() {
                         }}
                     />
                     {me ? (
-                        <Pressable style={styles.avatar} onPress={() => signOut()}>
-                            <Text style={styles.avatarText}>
-                                {(me.name || me.email || "U").slice(0, 1).toUpperCase()}
-                            </Text>
+                        <Pressable style={styles.accountChip} onPress={() => signOut()}>
+                            <Text style={styles.accountChipText}>Sign out</Text>
                         </Pressable>
                     ) : (
-                        <Pressable
-                            style={[styles.avatar, { backgroundColor: theme.cardElevated }]}
-                            onPress={() => setUpgradeOpen(true)}
-                        >
-                            <Ionicons name="person-outline" size={14} color={theme.textSecondary} />
-                        </Pressable>
+                        <View style={styles.guestChip}>
+                            <Text style={styles.guestChipText}>Guest</Text>
+                        </View>
                     )}
                 </View>
             </View>
 
-            <View style={[styles.body, compact && { flexDirection: "column" }]}>
-                {!useFloatingSidebar && (
-                    <ScrollView style={styles.sidebar} contentContainerStyle={styles.sidebarScrollContent}>
-                        {sidebarContent}
-                    </ScrollView>
-                )}
-
+            <View style={styles.body}>
                 <View style={styles.canvasWrap}>
-                    {useFloatingSidebar && (
-                        <View pointerEvents="box-none" style={styles.floatingSidebarWrap}>
-                            {sidebarOpen ? (
-                                <View style={styles.floatingSidebar}>
-                                    <ScrollView
-                                        style={styles.floatingSidebarScroll}
-                                        contentContainerStyle={styles.sidebarScrollContent}
-                                    >
-                                        {sidebarContent}
-                                    </ScrollView>
-                                </View>
-                            ) : (
-                                <Pressable
-                                    style={styles.sidebarDockButton}
-                                    onPress={() => setSidebarOpen(true)}
-                                >
-                                    <Ionicons
-                                        name="qr-code-outline"
-                                        size={16}
-                                        color={theme.accent}
-                                    />
-                                    <Text style={styles.sidebarDockText}>Pair</Text>
-                                </Pressable>
-                            )}
-                        </View>
-                    )}
-
                     <DropCanvas
                         items={items ?? []}
                         connected={connected}
@@ -537,16 +386,65 @@ export default function WebDashboard() {
                         onSelect={(id) => setSelectedItemId(id)}
                         onDelete={handleDeleteItem}
                         onSave={handleSaveItem}
-                        onUpdatePosition={(id, x, y) =>
-                            token &&
-                            updateItemPosition({
+                        onUpdatePosition={(id, x, y) => {
+                            if (!token) return;
+                            void updateItemPosition({
                                 sessionToken: token,
                                 itemId: id,
                                 x,
                                 y,
-                            })
-                        }
+                            });
+                        }}
                     />
+
+                    {floatingPanel && !panelOpen && (
+                        <Pressable
+                            style={styles.panelDockButton}
+                            onPress={() => setPanelOpen(true)}
+                        >
+                            <Ionicons
+                                name="phone-portrait-outline"
+                                size={15}
+                                color={theme.accentForeground}
+                            />
+                            <Text style={styles.panelDockButtonText}>Device</Text>
+                        </Pressable>
+                    )}
+
+                    {panelOpen && (
+                        <View
+                            pointerEvents="box-none"
+                            style={[
+                                styles.panelLayer,
+                                floatingPanel
+                                    ? styles.panelLayerFloating
+                                    : styles.panelLayerCentered,
+                            ]}
+                        >
+                            <ConnectionPanel
+                                connected={connected}
+                                phoneName={phoneName}
+                                qrValue={qrValue}
+                                formattedCode={formattedCode}
+                                showClose={floatingPanel}
+                                isPro={isPro}
+                                onClose={() => setPanelOpen(false)}
+                                onCopyCode={() => {
+                                    void handleCopyCode();
+                                }}
+                                onNewCode={() => {
+                                    void handleNewCode();
+                                }}
+                                onDisconnect={() => {
+                                    void handleDisconnect();
+                                }}
+                                onShare={() => {
+                                    void handleShareAction();
+                                }}
+                                onUpgrade={() => setUpgradeOpen(true)}
+                            />
+                        </View>
+                    )}
 
                     <View style={styles.bottomBar}>
                         <View style={styles.textInputCard}>
@@ -561,7 +459,7 @@ export default function WebDashboard() {
                                 placeholder={
                                     connected
                                         ? "Type text to send to your phone…"
-                                        : "Type or paste anything (connect a phone to relay it)"
+                                        : "Type or paste anything once your phone is paired…"
                                 }
                                 placeholderTextColor={theme.textMuted}
                                 value={textDraft}
@@ -586,13 +484,17 @@ export default function WebDashboard() {
                                     setTextDraft("");
                                 }}
                             >
-                                <Ionicons name="arrow-up" size={16} color="#fff" />
+                                <Ionicons
+                                    name="arrow-up"
+                                    size={16}
+                                    color={theme.accentForeground}
+                                />
                                 <Text style={styles.sendBtnText}>Send</Text>
                             </Pressable>
                         </View>
                         {uploadingCount > 0 && (
                             <View style={styles.uploadingPill}>
-                                <ActivityIndicator color={theme.accent} size="small" />
+                                <ActivityIndicator color={theme.accentForeground} size="small" />
                                 <Text style={styles.uploadingText}>Uploading {uploadingCount}…</Text>
                             </View>
                         )}
@@ -602,11 +504,9 @@ export default function WebDashboard() {
                 {!compact && (
                     <View style={styles.toolRail}>
                         <ToolButton
-                            icon="qr-code-outline"
-                            active={useFloatingSidebar ? sidebarOpen : connected}
-                            onPress={() => {
-                                void handleConnectAction();
-                            }}
+                            icon={connected ? "phone-portrait-outline" : "qr-code-outline"}
+                            active={connected || panelOpen}
+                            onPress={handleConnectAction}
                         />
                         <ToolButton
                             icon="cloud-upload-outline"
@@ -624,7 +524,7 @@ export default function WebDashboard() {
                             onPress={() => openFilePicker("image/*,video/*")}
                         />
                         <ToolButton
-                            icon="star-outline"
+                            icon="sparkles-outline"
                             active={upgradeOpen}
                             onPress={() => setUpgradeOpen(true)}
                         />
@@ -649,6 +549,161 @@ export default function WebDashboard() {
     );
 }
 
+function ConnectionPanel({
+    connected,
+    phoneName,
+    qrValue,
+    formattedCode,
+    showClose,
+    isPro,
+    onClose,
+    onCopyCode,
+    onNewCode,
+    onDisconnect,
+    onShare,
+    onUpgrade,
+}: {
+    connected: boolean;
+    phoneName?: string;
+    qrValue: string;
+    formattedCode: string;
+    showClose: boolean;
+    isPro: boolean;
+    onClose: () => void;
+    onCopyCode: () => void;
+    onNewCode: () => void;
+    onDisconnect: () => void;
+    onShare: () => void;
+    onUpgrade: () => void;
+}) {
+    return (
+        <View style={styles.panelCard}>
+            <View style={styles.panelHeaderRow}>
+                <Text style={styles.sectionLabel}>CONNECTION</Text>
+                {showClose && (
+                    <Pressable style={styles.panelCloseButton} onPress={onClose}>
+                        <Ionicons name="close" size={14} color={theme.textSecondary} />
+                    </Pressable>
+                )}
+            </View>
+
+            <View style={styles.statusRow}>
+                <View
+                    style={[
+                        styles.statusDot,
+                        {
+                            backgroundColor: connected ? theme.accent : theme.textMuted,
+                        },
+                    ]}
+                />
+                <Text style={styles.statusText}>
+                    {connected
+                        ? `Connected to ${phoneName ?? "phone"}`
+                        : "Ready to pair your phone"}
+                </Text>
+            </View>
+
+            {connected ? (
+                <View style={styles.connectedCard}>
+                    <View style={styles.connectedDeviceRow}>
+                        <View style={styles.connectedDeviceIcon}>
+                            <Ionicons
+                                name="phone-portrait-outline"
+                                size={16}
+                                color={theme.accentForeground}
+                            />
+                        </View>
+                        <View style={{ flex: 1, gap: 2 }}>
+                            <Text style={styles.connectedDeviceTitle}>
+                                {phoneName ?? "Connected phone"}
+                            </Text>
+                            <Text style={styles.connectedDeviceMeta}>
+                                Temporary session active
+                            </Text>
+                        </View>
+                    </View>
+                    <Pressable style={styles.disconnectBtn} onPress={onDisconnect}>
+                        <Ionicons
+                            name="close-circle-outline"
+                            size={14}
+                            color={theme.danger}
+                        />
+                        <Text style={styles.disconnectText}>Disconnect</Text>
+                    </Pressable>
+                </View>
+            ) : (
+                <>
+                    <View style={styles.qrCard}>
+                        {qrValue ? (
+                            <View style={{ position: "relative", alignItems: "center" }}>
+                                <QRCodeView value={qrValue} size={180} />
+                            </View>
+                        ) : (
+                            <ActivityIndicator color={theme.accent} />
+                        )}
+                        <Text style={styles.qrHelper}>Scan with SpeedSend on your phone</Text>
+                    </View>
+
+                    <View style={styles.codeCard}>
+                        <Text style={styles.codeLabel}>Or enter code on your phone</Text>
+                        <Text selectable style={styles.codeText}>
+                            {formattedCode || "------"}
+                        </Text>
+                        <Text style={styles.codeSub}>Enter this in the SpeedSend app</Text>
+                        <View style={styles.codeButtonsRow}>
+                            <SmallButton
+                                icon="copy-outline"
+                                label="Copy code"
+                                onPress={onCopyCode}
+                            />
+                            <SmallButton
+                                icon="refresh"
+                                label="New code"
+                                onPress={onNewCode}
+                            />
+                        </View>
+                    </View>
+
+                    <View style={styles.promoCard}>
+                        <View style={styles.promoIcon}>
+                            <Ionicons
+                                name="phone-portrait-outline"
+                                size={16}
+                                color={theme.accentForeground}
+                            />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.promoTitle}>SpeedSend for iOS & Android</Text>
+                        </View>
+                        <Pressable style={styles.promoCta} onPress={onShare}>
+                            <Text style={styles.promoCtaText}>Share setup</Text>
+                        </Pressable>
+                    </View>
+
+                    {!isPro && (
+                        <Pressable style={styles.upgradeCard} onPress={onUpgrade}>
+                            <Ionicons
+                                name="sparkles"
+                                size={16}
+                                color={theme.accentForeground}
+                            />
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.upgradeTitle}>Pro storage</Text>
+                                <Text style={styles.upgradeSub}>Coming soon</Text>
+                            </View>
+                            <Ionicons
+                                name="chevron-forward"
+                                size={16}
+                                color={theme.textSecondary}
+                            />
+                        </Pressable>
+                    )}
+                </>
+            )}
+        </View>
+    );
+}
+
 function PillButton({
     icon,
     label,
@@ -667,27 +722,26 @@ function PillButton({
             onPress={onPress}
             style={[
                 styles.pillBtn,
-                primary && {
-                    backgroundColor: theme.accent,
-                    borderColor: theme.accentBright,
-                },
-                active &&
-                    !primary && {
-                        backgroundColor: theme.accentSoft,
-                        borderColor: theme.accentBorder,
-                    },
+                primary && styles.pillBtnPrimary,
+                active && !primary && styles.pillBtnActive,
             ]}
         >
             <Ionicons
                 name={icon}
                 size={14}
-                color={primary ? "#fff" : active ? theme.accent : theme.textSecondary}
+                color={
+                    primary
+                        ? theme.accentForeground
+                        : active
+                          ? theme.text
+                          : theme.textSecondary
+                }
             />
             <Text
                 style={[
                     styles.pillBtnText,
-                    primary && { color: "#fff", fontWeight: "600" },
-                    active && !primary && { color: theme.accent },
+                    primary && styles.pillBtnPrimaryText,
+                    active && !primary && styles.pillBtnActiveText,
                 ]}
             >
                 {label}
@@ -725,18 +779,12 @@ function ToolButton({
     return (
         <Pressable
             onPress={onPress}
-            style={[
-                styles.toolBtn,
-                active && {
-                    backgroundColor: theme.accentSoft,
-                    borderColor: theme.accentBorder,
-                },
-            ]}
+            style={[styles.toolBtn, active && styles.toolBtnActive]}
         >
             <Ionicons
                 name={icon}
                 size={16}
-                color={active ? theme.accent : theme.textSecondary}
+                color={active ? theme.text : theme.textSecondary}
             />
         </Pressable>
     );
@@ -763,13 +811,37 @@ function DropCanvas({
     onSave: (id: Id<"sharedItems">) => void;
     onUpdatePosition: (id: Id<"sharedItems">, x: number, y: number) => void;
 }) {
-    const ref = useRef<View>(null);
+    const viewportRef = useRef<View>(null);
     const [size, setSize] = useState({ w: 0, h: 0 });
+    const surfaceWidth = Math.max(1800, Math.round(size.w * 2.2));
+    const surfaceHeight = Math.max(1200, Math.round(size.h * 1.9));
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const panRef = useRef(pan);
+
+    useEffect(() => {
+        panRef.current = pan;
+    }, [pan]);
+
+    useEffect(() => {
+        if (!size.w || !size.h) return;
+        const minX = Math.min(0, size.w - surfaceWidth);
+        const minY = Math.min(0, size.h - surfaceHeight);
+        setPan({
+            x: Math.max(minX, Math.min(0, (size.w - surfaceWidth) / 2)),
+            y: Math.max(minY, Math.min(0, (size.h - surfaceHeight) / 2)),
+        });
+    }, [size.w, size.h, surfaceWidth, surfaceHeight]);
 
     useEffect(() => {
         if (Platform.OS !== "web" || typeof window === "undefined") return;
-        const node = ref.current as unknown as HTMLElement | null;
+        const node = viewportRef.current as unknown as HTMLElement | null;
         if (!node) return;
+
+        const clampPan = (next: { x: number; y: number }) => ({
+            x: Math.max(Math.min(0, next.x), Math.min(0, size.w - surfaceWidth)),
+            y: Math.max(Math.min(0, next.y), Math.min(0, size.h - surfaceHeight)),
+        });
+
         const onDragOver = (event: DragEvent) => {
             event.preventDefault();
             setDragOver(true);
@@ -788,80 +860,106 @@ function DropCanvas({
             }
             if (files.length > 0) onDropFiles(files);
         };
+
+        let panning = false;
+        let startX = 0;
+        let startY = 0;
+        let basePan = panRef.current;
+
+        const onMouseDown = (event: MouseEvent) => {
+            if (event.button !== 1) return;
+            panning = true;
+            startX = event.clientX;
+            startY = event.clientY;
+            basePan = panRef.current;
+            node.style.cursor = "grabbing";
+            event.preventDefault();
+        };
+        const onMouseMove = (event: MouseEvent) => {
+            if (!panning) return;
+            event.preventDefault();
+            setPan(
+                clampPan({
+                    x: basePan.x + (event.clientX - startX),
+                    y: basePan.y + (event.clientY - startY),
+                })
+            );
+        };
+        const onMouseUp = () => {
+            if (!panning) return;
+            panning = false;
+            node.style.cursor = "default";
+        };
+        const onAuxClick = (event: MouseEvent) => {
+            if (event.button === 1) event.preventDefault();
+        };
+
         node.addEventListener("dragover", onDragOver);
         node.addEventListener("dragleave", onDragLeave);
         node.addEventListener("drop", onDrop);
+        node.addEventListener("mousedown", onMouseDown);
+        node.addEventListener("auxclick", onAuxClick);
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+
         return () => {
             node.removeEventListener("dragover", onDragOver);
             node.removeEventListener("dragleave", onDragLeave);
             node.removeEventListener("drop", onDrop);
+            node.removeEventListener("mousedown", onMouseDown);
+            node.removeEventListener("auxclick", onAuxClick);
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
         };
-    }, [onDropFiles, setDragOver]);
+    }, [onDropFiles, setDragOver, size.w, size.h, surfaceWidth, surfaceHeight]);
 
     return (
         <View
-            ref={ref}
+            ref={viewportRef}
             onLayout={(event) => {
                 const { width, height } = event.nativeEvent.layout;
                 setSize({ w: width, h: height });
             }}
             style={[
                 styles.canvas,
-                dragOver && {
-                    borderColor: theme.accent,
-                    backgroundColor: theme.accentSoft,
-                },
+                dragOver && styles.canvasDragOver,
             ]}
         >
-            <View style={styles.dotGrid} pointerEvents="none" />
-
-            {items.length === 0 ? (
-                <View style={styles.emptyCenter} pointerEvents="none">
-                    <View style={styles.dropIcon}>
-                        <Ionicons
-                            name="cloud-upload-outline"
-                            size={32}
-                            color={theme.accent}
-                        />
-                    </View>
-                    <Text style={styles.emptyHeading}>
-                        {connected ? "Connected to your phone" : "Drop anything here"}
-                    </Text>
-                    <Text style={styles.emptySub}>
-                        {connected
-                            ? "Drop files here or paste anything to send"
-                            : "Files, images, videos, audio, text.\nOr connect your phone to relay content between devices instantly."}
-                    </Text>
-                    <View style={styles.hintRow}>
-                        <View style={styles.hintChip}>
-                            <Text style={styles.hintKey}>⌘V</Text>
-                            <Text style={styles.hintText}>to paste</Text>
-                        </View>
-                        <View style={styles.hintChip}>
-                            <Ionicons
-                                name="hand-left-outline"
-                                size={12}
-                                color={theme.textSecondary}
-                            />
-                            <Text style={styles.hintText}>drag to drop</Text>
-                        </View>
-                    </View>
-                </View>
-            ) : (
-                items.map((item, index) => (
+            <View
+                style={[
+                    styles.canvasSurface,
+                    {
+                        width: surfaceWidth,
+                        height: surfaceHeight,
+                        transform: [{ translateX: pan.x }, { translateY: pan.y }],
+                    },
+                ]}
+            >
+                <View style={styles.dotGrid} pointerEvents="none" />
+                {items.map((item, index) => (
                     <CanvasItem
                         key={item._id}
                         item={item}
                         index={index}
-                        canvasW={size.w}
-                        canvasH={size.h}
+                        canvasW={surfaceWidth}
+                        canvasH={surfaceHeight}
                         onSelect={() => onSelect(item._id)}
                         onDelete={() => onDelete(item._id)}
                         onSave={() => onSave(item._id)}
                         onMove={(nextX, nextY) => onUpdatePosition(item._id, nextX, nextY)}
                     />
-                ))
-            )}
+                ))}
+            </View>
+
+            <View pointerEvents="none" style={styles.canvasHintWrap}>
+                <View style={styles.canvasHintChip}>
+                    <Text style={styles.canvasHintText}>
+                        {connected
+                            ? "Drop or paste files · middle-click and drag to move around"
+                            : "Pair a phone, then drop or paste files · middle-click and drag to move around"}
+                    </Text>
+                </View>
+            </View>
         </View>
     );
 }
@@ -870,33 +968,36 @@ const styles = StyleSheet.create({
     root: {
         flex: 1,
         backgroundColor: theme.bg,
-        ...(Platform.OS === "web" ? { minHeight: "100vh" as unknown as number } : {}),
+        ...(Platform.OS === "web" ? ({ minHeight: "100vh" } as unknown as object) : {}),
     },
     topbar: {
         height: 60,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        paddingHorizontal: 16,
+        paddingHorizontal: 18,
         borderBottomWidth: 1,
         borderBottomColor: theme.border,
         backgroundColor: theme.bg,
     },
-    brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+    brandRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+    },
     logoSquare: {
         width: 30,
         height: 30,
-        borderRadius: 8,
+        borderRadius: 10,
         backgroundColor: theme.accent,
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 0 18px rgba(255,92,168,0.45)",
     },
     brandText: {
         color: theme.text,
         fontWeight: "700",
         fontSize: 18,
-        letterSpacing: 0.2,
+        letterSpacing: -0.2,
     },
     topActions: {
         flexDirection: "row",
@@ -908,40 +1009,154 @@ const styles = StyleSheet.create({
         alignItems: "center",
         gap: 6,
         paddingHorizontal: 12,
-        paddingVertical: 7,
+        paddingVertical: 8,
         borderRadius: radii.pill,
         backgroundColor: theme.card,
         borderWidth: 1,
         borderColor: theme.border,
     },
-    pillBtnText: { color: theme.textSecondary, fontSize: 13 },
-    avatar: {
-        width: 30,
-        height: 30,
-        borderRadius: 15,
+    pillBtnPrimary: {
         backgroundColor: theme.accent,
+        borderColor: theme.accentBright,
+    },
+    pillBtnActive: {
+        backgroundColor: theme.cardElevated,
+        borderColor: theme.border,
+    },
+    pillBtnText: {
+        color: theme.textSecondary,
+        fontSize: 13,
+    },
+    pillBtnPrimaryText: {
+        color: theme.accentForeground,
+        fontWeight: "600",
+    },
+    pillBtnActiveText: {
+        color: theme.text,
+    },
+    accountChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: radii.pill,
+        backgroundColor: theme.card,
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
+    accountChipText: {
+        color: theme.text,
+        fontSize: 13,
+        fontWeight: "600",
+    },
+    guestChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: radii.pill,
+        backgroundColor: theme.panel,
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
+    guestChipText: {
+        color: theme.textMuted,
+        fontSize: 13,
+        fontWeight: "500",
+    },
+    body: {
+        flex: 1,
+        flexDirection: "row",
+    },
+    canvasWrap: {
+        flex: 1,
+        padding: 18,
+        gap: 12,
+        position: "relative",
+    },
+    canvas: {
+        flex: 1,
+        borderRadius: 24,
+        backgroundColor: theme.panel,
+        borderWidth: 1,
+        borderColor: theme.border,
+        overflow: "hidden",
+        position: "relative",
+    },
+    canvasDragOver: {
+        borderColor: theme.accentBorder,
+        backgroundColor: theme.card,
+    },
+    canvasSurface: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+    },
+    dotGrid: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        ...(Platform.OS === "web"
+            ? ({
+                  backgroundImage:
+                      "radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)",
+                  backgroundSize: "24px 24px",
+              } as unknown as object)
+            : {}),
+    },
+    canvasHintWrap: {
+        position: "absolute",
+        left: 16,
+        right: 16,
+        bottom: 16,
+        alignItems: "center",
+    },
+    canvasHintChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: radii.pill,
+        backgroundColor: "rgba(15,15,19,0.88)",
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
+    canvasHintText: {
+        color: theme.textSecondary,
+        fontSize: 12,
+        textAlign: "center",
+    },
+    panelLayer: {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        zIndex: 5,
+    },
+    panelLayerFloating: {
+        top: 18,
+        left: 18,
+        right: undefined,
+    },
+    panelLayerCentered: {
+        top: 0,
+        bottom: 0,
         alignItems: "center",
         justifyContent: "center",
-        marginLeft: 4,
+        paddingHorizontal: 20,
     },
-    avatarText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-    body: { flex: 1, flexDirection: "row" },
-    sidebar: {
+    panelCard: {
         width: 320,
-        borderRightWidth: 1,
-        borderRightColor: theme.border,
-        backgroundColor: theme.panel,
-    },
-    sidebarScrollContent: {
-        padding: 18,
+        maxWidth: "100%",
+        padding: 16,
         gap: 14,
+        backgroundColor: "rgba(24,24,28,0.96)",
+        borderWidth: 1,
+        borderColor: theme.border,
+        borderRadius: 24,
+        boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
     },
-    sidebarHeaderRow: {
+    panelHeaderRow: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
     },
-    sidebarCloseButton: {
+    panelCloseButton: {
         width: 28,
         height: 28,
         borderRadius: 14,
@@ -957,14 +1172,21 @@ const styles = StyleSheet.create({
         fontFamily: theme.mono,
         letterSpacing: 1.4,
     },
-    statusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    pulseDot: {
+    statusRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+    },
+    statusDot: {
         width: 8,
         height: 8,
         borderRadius: 4,
-        boxShadow: "0 0 10px rgba(255,92,168,0.7)",
     },
-    statusText: { color: theme.text, fontSize: 14, fontWeight: "500" },
+    statusText: {
+        color: theme.text,
+        fontSize: 13,
+        fontWeight: "600",
+    },
     qrCard: {
         backgroundColor: theme.card,
         padding: 14,
@@ -978,7 +1200,7 @@ const styles = StyleSheet.create({
         color: theme.textMuted,
         fontSize: 11,
         fontFamily: theme.mono,
-        letterSpacing: 0.6,
+        letterSpacing: 0.5,
     },
     codeCard: {
         backgroundColor: theme.card,
@@ -991,44 +1213,87 @@ const styles = StyleSheet.create({
     codeLabel: {
         color: theme.textMuted,
         fontSize: 10,
-        letterSpacing: 1.2,
+        letterSpacing: 1.1,
         fontFamily: theme.mono,
     },
     codeText: {
         color: theme.text,
-        fontSize: 32,
+        fontSize: 31,
         fontWeight: "600",
         fontFamily: theme.mono,
         letterSpacing: 6,
     },
-    codeSub: { color: theme.textSecondary, fontSize: 12 },
-    codeButtonsRow: { flexDirection: "row", gap: 8, marginTop: 4 },
+    codeSub: {
+        color: theme.textSecondary,
+        fontSize: 12,
+    },
+    codeButtonsRow: {
+        flexDirection: "row",
+        gap: 8,
+        marginTop: 2,
+    },
     smallBtn: {
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
         paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 8,
+        paddingVertical: 8,
+        borderRadius: 10,
         backgroundColor: theme.cardElevated,
         borderWidth: 1,
         borderColor: theme.border,
     },
-    smallBtnText: { color: theme.textSecondary, fontSize: 12 },
+    smallBtnText: {
+        color: theme.textSecondary,
+        fontSize: 12,
+    },
+    connectedCard: {
+        gap: 12,
+        padding: 14,
+        borderRadius: radii.lg,
+        backgroundColor: theme.card,
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
+    connectedDeviceRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+    },
+    connectedDeviceIcon: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: theme.accent,
+    },
+    connectedDeviceTitle: {
+        color: theme.text,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    connectedDeviceMeta: {
+        color: theme.textSecondary,
+        fontSize: 12,
+    },
     disconnectBtn: {
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 9,
+        borderRadius: 10,
         backgroundColor: "rgba(255,94,108,0.08)",
         borderWidth: 1,
         borderColor: "rgba(255,94,108,0.25)",
-        marginTop: 6,
         alignSelf: "flex-start",
     },
-    disconnectText: { color: theme.danger, fontSize: 12, fontWeight: "500" },
+    disconnectText: {
+        color: theme.danger,
+        fontSize: 12,
+        fontWeight: "600",
+    },
     promoCard: {
         flexDirection: "row",
         alignItems: "center",
@@ -1042,150 +1307,69 @@ const styles = StyleSheet.create({
     promoIcon: {
         width: 32,
         height: 32,
-        borderRadius: 8,
-        backgroundColor: theme.accentSoft,
+        borderRadius: 10,
+        backgroundColor: theme.accent,
         alignItems: "center",
         justifyContent: "center",
-        borderWidth: 1,
-        borderColor: theme.accentBorder,
     },
-    promoTitle: { color: theme.text, fontSize: 13, fontWeight: "600" },
+    promoTitle: {
+        color: theme.text,
+        fontSize: 13,
+        fontWeight: "600",
+    },
     promoCta: {
         paddingHorizontal: 10,
-        paddingVertical: 6,
-        backgroundColor: theme.accentSoft,
-        borderRadius: 8,
+        paddingVertical: 7,
+        backgroundColor: theme.cardElevated,
+        borderRadius: 10,
         borderWidth: 1,
-        borderColor: theme.accentBorder,
+        borderColor: theme.border,
     },
-    promoCtaText: { color: theme.accent, fontSize: 12, fontWeight: "600" },
+    promoCtaText: {
+        color: theme.text,
+        fontSize: 12,
+        fontWeight: "600",
+    },
     upgradeCard: {
         flexDirection: "row",
         alignItems: "center",
         gap: 10,
         padding: 12,
         borderRadius: radii.md,
-        backgroundColor: theme.accentSoft,
-        borderWidth: 1,
-        borderColor: theme.accentBorder,
-    },
-    upgradeTitle: { color: theme.text, fontSize: 13, fontWeight: "600" },
-    upgradeSub: { color: theme.textSecondary, fontSize: 11 },
-    canvasWrap: {
-        flex: 1,
-        padding: 16,
-        gap: 12,
-        position: "relative",
-    },
-    floatingSidebarWrap: {
-        position: "absolute",
-        top: 16,
-        left: 16,
-        zIndex: 5,
-    },
-    floatingSidebar: {
-        width: 292,
-        maxHeight: 560,
-        backgroundColor: theme.panel,
+        backgroundColor: theme.card,
         borderWidth: 1,
         borderColor: theme.border,
-        borderRadius: radii.xl,
-        overflow: "hidden",
-        boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
     },
-    floatingSidebarScroll: {
-        maxHeight: 560,
+    upgradeTitle: {
+        color: theme.text,
+        fontSize: 13,
+        fontWeight: "600",
     },
-    sidebarDockButton: {
+    upgradeSub: {
+        color: theme.textSecondary,
+        fontSize: 11,
+    },
+    panelDockButton: {
+        position: "absolute",
+        top: 18,
+        left: 18,
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderRadius: radii.pill,
-        backgroundColor: theme.card,
-        borderWidth: 1,
-        borderColor: theme.accentBorder,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+        backgroundColor: theme.accent,
+        zIndex: 5,
     },
-    sidebarDockText: {
-        color: theme.text,
+    panelDockButtonText: {
+        color: theme.accentForeground,
         fontSize: 13,
-        fontWeight: "600",
+        fontWeight: "700",
     },
-    canvas: {
-        flex: 1,
-        borderRadius: radii.xl,
-        backgroundColor: theme.panel,
-        borderWidth: 1,
-        borderColor: theme.border,
-        overflow: "hidden",
-        position: "relative",
+    bottomBar: {
+        gap: 8,
     },
-    dotGrid: {
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        ...(Platform.OS === "web"
-            ? ({
-                  backgroundImage:
-                      "radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)",
-                  backgroundSize: "22px 22px",
-              } as unknown as object)
-            : {}),
-    },
-    emptyCenter: {
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        padding: 32,
-    },
-    dropIcon: {
-        width: 72,
-        height: 72,
-        borderRadius: 20,
-        backgroundColor: theme.accentSoft,
-        borderWidth: 1,
-        borderColor: theme.accentBorder,
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "0 0 30px rgba(255,92,168,0.3)",
-    },
-    emptyHeading: { color: theme.text, fontSize: 22, fontWeight: "600" },
-    emptySub: {
-        color: theme.textSecondary,
-        textAlign: "center",
-        fontSize: 13,
-        lineHeight: 20,
-        maxWidth: 360,
-    },
-    hintRow: { flexDirection: "row", gap: 10, marginTop: 6 },
-    hintChip: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: radii.pill,
-        backgroundColor: theme.card,
-        borderWidth: 1,
-        borderColor: theme.border,
-    },
-    hintKey: {
-        color: theme.text,
-        fontSize: 11,
-        fontFamily: theme.mono,
-        fontWeight: "600",
-    },
-    hintText: { color: theme.textSecondary, fontSize: 11 },
-    bottomBar: { gap: 8 },
     textInputCard: {
         flexDirection: "row",
         alignItems: "center",
@@ -1222,20 +1406,28 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: radii.pill,
     },
-    sendBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+    sendBtnText: {
+        color: theme.accentForeground,
+        fontWeight: "700",
+        fontSize: 13,
+    },
     uploadingPill: {
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
         alignSelf: "flex-start",
         paddingHorizontal: 10,
-        paddingVertical: 6,
+        paddingVertical: 7,
         borderRadius: radii.pill,
-        backgroundColor: theme.accentSoft,
+        backgroundColor: theme.accent,
         borderWidth: 1,
-        borderColor: theme.accentBorder,
+        borderColor: theme.accentBright,
     },
-    uploadingText: { color: theme.accent, fontSize: 12 },
+    uploadingText: {
+        color: theme.accentForeground,
+        fontSize: 12,
+        fontWeight: "600",
+    },
     toolRail: {
         position: "absolute",
         top: 84,
@@ -1246,15 +1438,18 @@ const styles = StyleSheet.create({
         borderRadius: radii.pill,
         padding: 6,
         gap: 6,
-        boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
     },
     toolBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
         alignItems: "center",
         justifyContent: "center",
         borderWidth: 1,
         borderColor: "transparent",
+    },
+    toolBtnActive: {
+        backgroundColor: theme.cardElevated,
+        borderColor: theme.border,
     },
 });

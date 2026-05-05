@@ -95,6 +95,7 @@ export function CanvasItem({
         let baseLeft = 0;
         let baseTop = 0;
         const onMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0) return;
             const target = e.target as HTMLElement;
             if (
                 target &&

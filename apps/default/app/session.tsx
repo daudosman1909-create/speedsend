@@ -137,7 +137,7 @@ export default function SessionScreen() {
     if (action === "download") {
       if (!item.fileUrl) return;
       try {
-        const target = (FileSystem.cacheDirectory ?? "") + (item.fileName ?? `relay-${Date.now()}`);
+        const target = (FileSystem.cacheDirectory ?? "") + (item.fileName ?? `speedsend-${Date.now()}`);
         await FileSystem.downloadAsync(item.fileUrl, target);
         Alert.alert("Saved", "Downloaded to app cache.");
       } catch (e) {
@@ -171,7 +171,7 @@ export default function SessionScreen() {
       <View style={styles.topRow}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <View style={[styles.dot, { backgroundColor: connected ? theme.accent : theme.textMuted }]} />
-          <Text style={styles.title}>Relay</Text>
+          <Text style={styles.title}>SpeedSend</Text>
         </View>
         <Pressable onPress={() => router.push("/settings")}>
           <Ionicons name="settings-outline" size={22} color={theme.textSecondary} />

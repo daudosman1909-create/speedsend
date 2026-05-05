@@ -43,9 +43,9 @@ export default function WelcomeScreen() {
       <View style={styles.content}>
         <View style={{ alignItems: "flex-start" }}>
           <View style={styles.logoBox}>
-            <Ionicons name="flash" size={32} color="#fff" />
+            <Ionicons name="flash" size={32} color={theme.accentForeground} />
           </View>
-          <Text style={styles.brand}>Relay</Text>
+          <Text style={styles.brand}>SpeedSend</Text>
           <Text style={styles.headline}>Move anything between your phone and computer.</Text>
           <Text style={styles.sub}>Pair your phone with a browser and send files, photos, links, audio, video, and text instantly.</Text>
 
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   featureLabel: { color: theme.text, fontSize: 12, fontWeight: "600" },
   actions: { gap: 10 },
   primaryBtn: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: theme.accent, paddingVertical: 16, borderRadius: 14 },
-  primaryBtnText: { color: "#0a0a0d", fontSize: 15, fontWeight: "700" },
+  primaryBtnText: { color: theme.accentForeground, fontSize: 15, fontWeight: "700" },
   secondaryBtn: { borderWidth: 1, borderColor: theme.border, paddingVertical: 16, borderRadius: 14, alignItems: "center", backgroundColor: theme.panel },
   secondaryBtnText: { color: theme.text, fontSize: 15, fontWeight: "600" },
   tertiaryBtn: { paddingVertical: 14, alignItems: "center" },
