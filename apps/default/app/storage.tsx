@@ -1,12 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Image, Platform, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Image, Platform, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { theme, formatBytes, formatRelativeTime } from "@/lib/theme";
-import { useSessionToken } from "@/lib/session-token";
 import { GridBackdrop } from "@/components/GridBackdrop";
 import * as Clipboard from "expo-clipboard";
 
