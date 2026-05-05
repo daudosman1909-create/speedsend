@@ -11,7 +11,7 @@ import {
     ActivityIndicator,
 } from "react-native";
 import { useMutation, useQuery, useConvex } from "convex/react";
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useAuthActions, useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { theme, radii, isLikelyUrl } from "@/lib/theme";
 import { useSessionToken, detectBrowserName, detectDeviceName } from "@/lib/session-token";
@@ -22,7 +22,6 @@ import { Id } from "@/convex/_generated/dataModel";
 import { CanvasItem } from "./CanvasItem";
 import { ItemDetailModal } from "./ItemDetailModal";
 import { UpgradeModal } from "./UpgradeModal";
-import { useAuthToken } from "@convex-dev/auth/react";
 
 type ItemDoc = NonNullable<ReturnType<typeof useQuery<typeof api.items.listSessionItems>>>[number];
 
@@ -52,11 +51,9 @@ export default function WebDashboard() {
     const updateItemPosition = useMutation(api.items.updateItemPosition);
     const heartbeat = useMutation(api.sessions.heartbeat);
 
-    // Bootstrap a session if missing or invalid
     useEffect(() => {
         if (tokenLoading) return;
         if (token && sessionData === null) {
-            // server says session does not exist — clear and recreate
             void setToken(null);
             return;
         }
@@ -71,7 +68,6 @@ export default function WebDashboard() {
         }
     }, [token, tokenLoading, sessionData, createSession, setToken]);
 
-    // Heartbeat to keep session fresh
     useEffect(() => {
         if (!token) return;
         const id = setInterval(() => {
@@ -80,16 +76,12 @@ export default function WebDashboard() {
         return () => clearInterval(id);
     }, [token, heartbeat]);
 
-    // Cleanup on unload
     useEffect(() => {
         if (typeof window === "undefined") return;
         const handler = () => {
             if (token) {
                 try {
-                    const url = (process.env.EXPO_PUBLIC_CONVEX_URL ?? "").replace(
-                        /\/$/,
-                        ""
-                    );
+                    const url = (process.env.EXPO_PUBLIC_CONVEX_URL ?? "").replace(/\/$/, "");
                     const body = JSON.stringify({
                         path: "sessions:disconnectSession",
                         args: { sessionToken: token },
@@ -114,18 +106,19 @@ export default function WebDashboard() {
     const qrToken = sessionData?.qrToken;
     const phoneName = sessionData?.phoneDeviceName;
     const isPro = me?.isPro ?? sessionData?.isProUser ?? false;
-
-    // Pairing payload encoded into the QR
-    const qrValue = useMemo(() => {
-        if (!qrToken) return "";
-        return qrToken;
-    }, [qrToken]);
+    const qrValue = useMemo(() => qrToken ?? "", [qrToken]);
+    const formattedCode = useMemo(
+        () => (code ? `${code.slice(0, 3)} ${code.slice(3)}` : ""),
+        [code]
+    );
 
     const [textDraft, setTextDraft] = useState("");
     const [selectedItemId, setSelectedItemId] = useState<Id<"sharedItems"> | null>(null);
     const [upgradeOpen, setUpgradeOpen] = useState(false);
     const [uploadingCount, setUploadingCount] = useState(0);
     const [dragOver, setDragOver] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const textInputRef = useRef<TextInput>(null);
 
     const sendText = useCallback(
         async (text: string) => {
@@ -146,7 +139,7 @@ export default function WebDashboard() {
     const sendFiles = useCallback(
         async (files: File[]) => {
             if (!token || files.length === 0) return;
-            setUploadingCount((c) => c + files.length);
+            setUploadingCount((count) => count + files.length);
             try {
                 for (const file of files) {
                     try {
@@ -174,47 +167,46 @@ export default function WebDashboard() {
                             canvasX: Math.random() * 0.6 + 0.1,
                             canvasY: Math.random() * 0.5 + 0.1,
                         });
-                    } catch (e) {
-                        console.error("upload failed", e);
+                    } catch (error) {
+                        console.error("upload failed", error);
                     }
                 }
             } finally {
-                setUploadingCount((c) => Math.max(0, c - files.length));
+                setUploadingCount((count) => Math.max(0, count - files.length));
             }
         },
         [token, convex, sendItem]
     );
 
-    // Paste handler
     useEffect(() => {
         if (typeof window === "undefined") return;
-        const onPaste = async (e: ClipboardEvent) => {
+        const onPaste = async (event: ClipboardEvent) => {
             if (!token) return;
-            const target = e.target as HTMLElement | null;
+            const target = event.target as HTMLElement | null;
             if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-            const dt = e.clipboardData;
-            if (!dt) return;
-            const fileList: File[] = [];
-            for (let i = 0; i < dt.items.length; i++) {
-                const item = dt.items[i];
+            const dataTransfer = event.clipboardData;
+            if (!dataTransfer) return;
+            const files: Array<File> = [];
+            for (let index = 0; index < dataTransfer.items.length; index++) {
+                const item = dataTransfer.items[index];
                 if (item.kind === "file") {
-                    const f = item.getAsFile();
-                    if (f) fileList.push(f);
+                    const file = item.getAsFile();
+                    if (file) files.push(file);
                 }
             }
-            if (fileList.length > 0) {
-                e.preventDefault();
-                await sendFiles(fileList);
+            if (files.length > 0) {
+                event.preventDefault();
+                await sendFiles(files);
                 return;
             }
-            const text = dt.getData("text/plain");
-            if (text) {
-                e.preventDefault();
-                await sendText(text);
+            const pastedText = dataTransfer.getData("text/plain");
+            if (pastedText) {
+                event.preventDefault();
+                await sendText(pastedText);
             }
         };
-        window.addEventListener("paste", onPaste as unknown as EventListener);
-        return () => window.removeEventListener("paste", onPaste as unknown as EventListener);
+        window.addEventListener("paste", onPaste as EventListener);
+        return () => window.removeEventListener("paste", onPaste as EventListener);
     }, [token, sendText, sendFiles]);
 
     const handleDisconnect = useCallback(async () => {
@@ -228,9 +220,8 @@ export default function WebDashboard() {
     }, [token, newCode]);
 
     const handleCopyCode = useCallback(async () => {
-        if (code && typeof navigator !== "undefined" && navigator.clipboard) {
-            await navigator.clipboard.writeText(code);
-        }
+        if (!code || typeof navigator === "undefined" || !navigator.clipboard) return;
+        await navigator.clipboard.writeText(code);
     }, [code]);
 
     const handleSaveItem = useCallback(
@@ -255,10 +246,201 @@ export default function WebDashboard() {
 
     const dimensions = useWindowDimensions();
     const compact = dimensions.width < 1024;
+    const useFloatingSidebar = isAuthed && !compact;
+
+    useEffect(() => {
+        if (compact || !isAuthed) {
+            setSidebarOpen(true);
+            return;
+        }
+        setSidebarOpen(false);
+    }, [compact, isAuthed]);
+
+    const focusComposer = useCallback(() => {
+        textInputRef.current?.focus();
+    }, []);
+
+    const handleClipboardAction = useCallback(async () => {
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+            try {
+                const clipboardText = await navigator.clipboard.readText();
+                if (clipboardText.trim()) {
+                    await sendText(clipboardText);
+                    return;
+                }
+            } catch {
+                // ignore clipboard permission failures and fall back below
+            }
+        }
+
+        if (textDraft.trim()) {
+            await sendText(textDraft);
+            setTextDraft("");
+            return;
+        }
+
+        focusComposer();
+    }, [focusComposer, sendText, textDraft]);
+
+    const handleShareAction = useCallback(async () => {
+        const shareText = formattedCode
+            ? `Open Relay on your phone and connect with code ${formattedCode}.`
+            : "Open Relay on your phone and scan the QR code shown in Relay web.";
+
+        try {
+            if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+                await navigator.share({
+                    title: "Relay pairing",
+                    text: shareText,
+                });
+            } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+                await navigator.clipboard.writeText(shareText);
+            }
+        } catch {
+            // ignore aborted shares
+        }
+
+        if (useFloatingSidebar) {
+            setSidebarOpen(true);
+        }
+    }, [formattedCode, useFloatingSidebar]);
+
+    const openFilePicker = useCallback(
+        (accept?: string) => {
+            if (Platform.OS !== "web" || typeof document === "undefined") return;
+            const input = document.createElement("input");
+            input.type = "file";
+            input.multiple = true;
+            if (accept) input.accept = accept;
+            input.onchange = () => {
+                const files = input.files ? Array.from(input.files) : [];
+                void sendFiles(files);
+            };
+            input.click();
+        },
+        [sendFiles]
+    );
+
+    const handleConnectAction = useCallback(async () => {
+        if (useFloatingSidebar) {
+            setSidebarOpen((open) => !open);
+            return;
+        }
+        if (connected) {
+            await handleDisconnect();
+            return;
+        }
+        await handleNewCode();
+    }, [connected, handleDisconnect, handleNewCode, useFloatingSidebar]);
+
+    const sidebarContent = (
+        <>
+            <View style={styles.sidebarHeaderRow}>
+                <Text style={styles.sectionLabel}>CONNECTION</Text>
+                {useFloatingSidebar && (
+                    <Pressable
+                        style={styles.sidebarCloseButton}
+                        onPress={() => setSidebarOpen(false)}
+                    >
+                        <Ionicons name="close" size={14} color={theme.textSecondary} />
+                    </Pressable>
+                )}
+            </View>
+
+            <View style={styles.statusRow}>
+                <View
+                    style={[
+                        styles.pulseDot,
+                        connected
+                            ? { backgroundColor: theme.accent }
+                            : { backgroundColor: theme.textMuted },
+                    ]}
+                />
+                <Text style={styles.statusText}>
+                    {connected ? `Connected to ${phoneName ?? "phone"}` : "Waiting for device…"}
+                </Text>
+            </View>
+
+            <View style={styles.qrCard}>
+                {qrValue ? (
+                    <View style={{ position: "relative", alignItems: "center" }}>
+                        <QRCodeView value={qrValue} size={196} />
+                    </View>
+                ) : (
+                    <ActivityIndicator color={theme.accent} />
+                )}
+                <Text style={styles.qrHelper}>Scan with Relay on your phone</Text>
+            </View>
+
+            <View style={styles.codeCard}>
+                <Text style={styles.codeLabel}>Or enter code on your phone</Text>
+                <Text selectable style={styles.codeText}>
+                    {formattedCode || "------"}
+                </Text>
+                <Text style={styles.codeSub}>Enter this in the Relay app</Text>
+                <View style={styles.codeButtonsRow}>
+                    <SmallButton
+                        icon="copy-outline"
+                        label="Copy code"
+                        onPress={() => {
+                            void handleCopyCode();
+                        }}
+                    />
+                    <SmallButton
+                        icon="refresh"
+                        label="New code"
+                        onPress={() => {
+                            void handleNewCode();
+                        }}
+                    />
+                </View>
+                {connected && (
+                    <Pressable style={styles.disconnectBtn} onPress={() => void handleDisconnect()}>
+                        <Ionicons
+                            name="close-circle-outline"
+                            size={14}
+                            color={theme.danger}
+                        />
+                        <Text style={styles.disconnectText}>Disconnect</Text>
+                    </Pressable>
+                )}
+            </View>
+
+            <View style={styles.promoCard}>
+                <View style={styles.promoIcon}>
+                    <Ionicons name="phone-portrait-outline" size={16} color={theme.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.promoTitle}>Relay for iOS & Android</Text>
+                </View>
+                <Pressable
+                    style={styles.promoCta}
+                    onPress={() => {
+                        void handleShareAction();
+                    }}
+                >
+                    <Text style={styles.promoCtaText}>Share setup →</Text>
+                </Pressable>
+            </View>
+
+            {!isPro && (
+                <Pressable
+                    style={styles.upgradeCard}
+                    onPress={() => setUpgradeOpen(true)}
+                >
+                    <Ionicons name="sparkles" size={16} color={theme.accent} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.upgradeTitle}>Keep your storage</Text>
+                        <Text style={styles.upgradeSub}>€2.50/mo · save files &amp; history</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={theme.accent} />
+                </Pressable>
+            )}
+        </>
+    );
 
     return (
         <View style={styles.root}>
-            {/* Top nav */}
             <View style={styles.topbar}>
                 <View style={styles.brandRow}>
                     <View style={styles.logoSquare}>
@@ -270,23 +452,28 @@ export default function WebDashboard() {
                     <PillButton
                         icon="clipboard-outline"
                         label="Clipboard"
-                        onPress={() => sendText(textDraft)}
+                        onPress={() => {
+                            void handleClipboardAction();
+                        }}
                     />
                     <PillButton
                         icon={connected ? "flash" : "link-outline"}
-                        label={connected ? "Connected" : "Connect"}
-                        active={connected}
+                        label={useFloatingSidebar ? (sidebarOpen ? "Hide panel" : "Connect") : connected ? "Connected" : "Refresh code"}
+                        active={connected || (useFloatingSidebar && sidebarOpen)}
+                        onPress={() => {
+                            void handleConnectAction();
+                        }}
                     />
                     <PillButton
                         icon="share-outline"
                         label="Share"
                         primary
+                        onPress={() => {
+                            void handleShareAction();
+                        }}
                     />
                     {me ? (
-                        <Pressable
-                            style={styles.avatar}
-                            onPress={() => signOut()}
-                        >
+                        <Pressable style={styles.avatar} onPress={() => signOut()}>
                             <Text style={styles.avatarText}>
                                 {(me.name || me.email || "U").slice(0, 1).toUpperCase()}
                             </Text>
@@ -302,114 +489,41 @@ export default function WebDashboard() {
                 </View>
             </View>
 
-            {/* Body */}
             <View style={[styles.body, compact && { flexDirection: "column" }]}>
-                {/* Sidebar */}
-                <ScrollView
-                    style={[styles.sidebar, compact && { width: "100%", maxHeight: 480 }]}
-                    contentContainerStyle={{ padding: 18, gap: 14 }}
-                >
-                    <Text style={styles.sectionLabel}>CONNECTION</Text>
-                    <View style={styles.statusRow}>
-                        <View
-                            style={[
-                                styles.pulseDot,
-                                connected
-                                    ? { backgroundColor: theme.accent }
-                                    : { backgroundColor: theme.textMuted },
-                            ]}
-                        />
-                        <Text style={styles.statusText}>
-                            {connected
-                                ? `Connected to ${phoneName ?? "phone"}`
-                                : "Waiting for device\u2026"}
-                        </Text>
-                    </View>
+                {!useFloatingSidebar && (
+                    <ScrollView style={styles.sidebar} contentContainerStyle={styles.sidebarScrollContent}>
+                        {sidebarContent}
+                    </ScrollView>
+                )}
 
-                    {/* QR card */}
-                    <View style={styles.qrCard}>
-                        {qrValue ? (
-                            <View style={{ position: "relative", alignItems: "center" }}>
-                                <QRCodeView value={qrValue} size={196} />
-                            </View>
-                        ) : (
-                            <ActivityIndicator color={theme.accent} />
-                        )}
-                        <Text style={styles.qrHelper}>Scan with Relay on your phone</Text>
-                    </View>
-
-                    {/* Code card */}
-                    <View style={styles.codeCard}>
-                        <Text style={styles.codeLabel}>Or enter code on your phone</Text>
-                        <Text selectable style={styles.codeText}>
-                            {code ? `${code.slice(0, 3)} ${code.slice(3)}` : "------"}
-                        </Text>
-                        <Text style={styles.codeSub}>
-                            Enter this in the Relay app
-                        </Text>
-                        <View style={styles.codeButtonsRow}>
-                            <SmallButton
-                                icon="copy-outline"
-                                label="Copy code"
-                                onPress={handleCopyCode}
-                            />
-                            <SmallButton
-                                icon="refresh"
-                                label="New code"
-                                onPress={handleNewCode}
-                            />
-                        </View>
-                        {connected && (
-                            <Pressable
-                                style={styles.disconnectBtn}
-                                onPress={handleDisconnect}
-                            >
-                                <Ionicons
-                                    name="close-circle-outline"
-                                    size={14}
-                                    color={theme.danger}
-                                />
-                                <Text style={styles.disconnectText}>Disconnect</Text>
-                            </Pressable>
-                        )}
-                    </View>
-
-                    {/* Promo */}
-                    <View style={styles.promoCard}>
-                        <View style={styles.promoIcon}>
-                            <Ionicons name="phone-portrait-outline" size={16} color={theme.accent} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.promoTitle}>Relay for iOS &amp; Android</Text>
-                        </View>
-                        <Pressable style={styles.promoCta}>
-                            <Text style={styles.promoCtaText}>Get app →</Text>
-                        </Pressable>
-                    </View>
-
-                    {!isPro && (
-                        <Pressable
-                            style={styles.upgradeCard}
-                            onPress={() => setUpgradeOpen(true)}
-                        >
-                            <Ionicons name="sparkles" size={16} color={theme.accent} />
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.upgradeTitle}>Keep your storage</Text>
-                                <Text style={styles.upgradeSub}>
-                                    €2.50/mo · save files &amp; history
-                                </Text>
-                            </View>
-                            <Ionicons
-                                name="chevron-forward"
-                                size={16}
-                                color={theme.accent}
-                            />
-                        </Pressable>
-                    )}
-                </ScrollView>
-
-                {/* Canvas */}
                 <View style={styles.canvasWrap}>
+                    {useFloatingSidebar && (
+                        <View pointerEvents="box-none" style={styles.floatingSidebarWrap}>
+                            {sidebarOpen ? (
+                                <View style={styles.floatingSidebar}>
+                                    <ScrollView
+                                        style={styles.floatingSidebarScroll}
+                                        contentContainerStyle={styles.sidebarScrollContent}
+                                    >
+                                        {sidebarContent}
+                                    </ScrollView>
+                                </View>
+                            ) : (
+                                <Pressable
+                                    style={styles.sidebarDockButton}
+                                    onPress={() => setSidebarOpen(true)}
+                                >
+                                    <Ionicons
+                                        name="qr-code-outline"
+                                        size={16}
+                                        color={theme.accent}
+                                    />
+                                    <Text style={styles.sidebarDockText}>Pair</Text>
+                                </Pressable>
+                            )}
+                        </View>
+                    )}
+
                     <DropCanvas
                         items={items ?? []}
                         connected={connected}
@@ -430,7 +544,6 @@ export default function WebDashboard() {
                         }
                     />
 
-                    {/* Bottom text input */}
                     <View style={styles.bottomBar}>
                         <View style={styles.textInputCard}>
                             <Ionicons
@@ -439,6 +552,7 @@ export default function WebDashboard() {
                                 color={theme.textSecondary}
                             />
                             <TextInput
+                                ref={textInputRef}
                                 style={styles.textInput}
                                 placeholder={
                                     connected
@@ -455,10 +569,13 @@ export default function WebDashboard() {
                                 returnKeyType="send"
                             />
                             <Pressable
-                                style={[
-                                    styles.sendBtn,
-                                    !textDraft.trim() && { opacity: 0.4 },
-                                ]}
+                                style={styles.attachButton}
+                                onPress={() => openFilePicker()}
+                            >
+                                <Ionicons name="attach-outline" size={16} color={theme.textSecondary} />
+                            </Pressable>
+                            <Pressable
+                                style={[styles.sendBtn, !textDraft.trim() && { opacity: 0.4 }]}
                                 disabled={!textDraft.trim()}
                                 onPress={async () => {
                                     await sendText(textDraft);
@@ -472,32 +589,49 @@ export default function WebDashboard() {
                         {uploadingCount > 0 && (
                             <View style={styles.uploadingPill}>
                                 <ActivityIndicator color={theme.accent} size="small" />
-                                <Text style={styles.uploadingText}>
-                                    Uploading {uploadingCount}…
-                                </Text>
+                                <Text style={styles.uploadingText}>Uploading {uploadingCount}…</Text>
                             </View>
                         )}
                     </View>
                 </View>
 
-                {/* Right tool rail */}
                 {!compact && (
                     <View style={styles.toolRail}>
-                        <ToolButton icon="navigate-outline" active />
-                        <ToolButton icon="cloud-upload-outline" />
-                        <ToolButton icon="text-outline" />
-                        <ToolButton icon="clipboard-outline" />
-                        <ToolButton icon="image-outline" />
-                        <ToolButton icon="star-outline" />
+                        <ToolButton
+                            icon="qr-code-outline"
+                            active={useFloatingSidebar ? sidebarOpen : connected}
+                            onPress={() => {
+                                void handleConnectAction();
+                            }}
+                        />
+                        <ToolButton
+                            icon="cloud-upload-outline"
+                            onPress={() => openFilePicker()}
+                        />
+                        <ToolButton icon="text-outline" onPress={focusComposer} />
+                        <ToolButton
+                            icon="clipboard-outline"
+                            onPress={() => {
+                                void handleClipboardAction();
+                            }}
+                        />
+                        <ToolButton
+                            icon="image-outline"
+                            onPress={() => openFilePicker("image/*,video/*")}
+                        />
+                        <ToolButton
+                            icon="star-outline"
+                            active={upgradeOpen}
+                            onPress={() => setUpgradeOpen(true)}
+                        />
                     </View>
                 )}
             </View>
 
-            {/* Detail modal */}
             <ItemDetailModal
                 visible={!!selectedItemId}
                 onClose={() => setSelectedItemId(null)}
-                item={items?.find((i) => i._id === selectedItemId) ?? null}
+                item={items?.find((item) => item._id === selectedItemId) ?? null}
                 onDelete={handleDeleteItem}
                 onSave={handleSaveItem}
                 isPro={isPro}
@@ -578,12 +712,15 @@ function SmallButton({
 function ToolButton({
     icon,
     active,
+    onPress,
 }: {
     icon: React.ComponentProps<typeof Ionicons>["name"];
     active?: boolean;
+    onPress?: () => void;
 }) {
     return (
         <Pressable
+            onPress={onPress}
             style={[
                 styles.toolBtn,
                 active && {
@@ -615,7 +752,7 @@ function DropCanvas({
     items: ItemDoc[];
     connected: boolean;
     dragOver: boolean;
-    setDragOver: (b: boolean) => void;
+    setDragOver: (value: boolean) => void;
     onDropFiles: (files: File[]) => void;
     onSelect: (id: Id<"sharedItems">) => void;
     onDelete: (id: Id<"sharedItems">) => void;
@@ -625,26 +762,25 @@ function DropCanvas({
     const ref = useRef<View>(null);
     const [size, setSize] = useState({ w: 0, h: 0 });
 
-    // Web-specific drag-and-drop
     useEffect(() => {
         if (Platform.OS !== "web" || typeof window === "undefined") return;
-        const node = (ref.current as unknown as HTMLElement | null) ?? null;
+        const node = ref.current as unknown as HTMLElement | null;
         if (!node) return;
-        const onDragOver = (e: DragEvent) => {
-            e.preventDefault();
+        const onDragOver = (event: DragEvent) => {
+            event.preventDefault();
             setDragOver(true);
         };
-        const onDragLeave = (e: DragEvent) => {
-            e.preventDefault();
+        const onDragLeave = (event: DragEvent) => {
+            event.preventDefault();
             setDragOver(false);
         };
-        const onDrop = (e: DragEvent) => {
-            e.preventDefault();
+        const onDrop = (event: DragEvent) => {
+            event.preventDefault();
             setDragOver(false);
-            if (!e.dataTransfer) return;
-            const files: File[] = [];
-            for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                files.push(e.dataTransfer.files[i]);
+            if (!event.dataTransfer) return;
+            const files: Array<File> = [];
+            for (let index = 0; index < event.dataTransfer.files.length; index++) {
+                files.push(event.dataTransfer.files[index]);
             }
             if (files.length > 0) onDropFiles(files);
         };
@@ -661,8 +797,8 @@ function DropCanvas({
     return (
         <View
             ref={ref}
-            onLayout={(e) => {
-                const { width, height } = e.nativeEvent.layout;
+            onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
                 setSize({ w: width, h: height });
             }}
             style={[
@@ -708,17 +844,17 @@ function DropCanvas({
                     </View>
                 </View>
             ) : (
-                items.map((it, idx) => (
+                items.map((item, index) => (
                     <CanvasItem
-                        key={it._id}
-                        item={it}
-                        index={idx}
+                        key={item._id}
+                        item={item}
+                        index={index}
                         canvasW={size.w}
                         canvasH={size.h}
-                        onSelect={() => onSelect(it._id)}
-                        onDelete={() => onDelete(it._id)}
-                        onSave={() => onSave(it._id)}
-                        onMove={(nx, ny) => onUpdatePosition(it._id, nx, ny)}
+                        onSelect={() => onSelect(item._id)}
+                        onDelete={() => onDelete(item._id)}
+                        onSave={() => onSave(item._id)}
+                        onMove={(nextX, nextY) => onUpdatePosition(item._id, nextX, nextY)}
                     />
                 ))
             )}
@@ -758,18 +894,6 @@ const styles = StyleSheet.create({
         fontSize: 18,
         letterSpacing: 0.2,
     },
-    dot: {
-        width: 4,
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: theme.border,
-        marginHorizontal: 4,
-    },
-    brandSubtle: {
-        color: theme.textMuted,
-        fontSize: 12,
-        fontFamily: theme.mono,
-    },
     topActions: {
         flexDirection: "row",
         alignItems: "center",
@@ -804,6 +928,25 @@ const styles = StyleSheet.create({
         borderRightColor: theme.border,
         backgroundColor: theme.panel,
     },
+    sidebarScrollContent: {
+        padding: 18,
+        gap: 14,
+    },
+    sidebarHeaderRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    sidebarCloseButton: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: theme.cardElevated,
+        borderWidth: 1,
+        borderColor: theme.border,
+    },
     sectionLabel: {
         color: theme.textMuted,
         fontSize: 10,
@@ -826,21 +969,6 @@ const styles = StyleSheet.create({
         borderColor: theme.border,
         alignItems: "center",
         gap: 10,
-    },
-    qrCenterBadge: {
-        position: "absolute",
-        top: "50%",
-        left: "50%",
-        width: 32,
-        height: 32,
-        marginTop: -16,
-        marginLeft: -16,
-        borderRadius: 9,
-        backgroundColor: theme.accent,
-        alignItems: "center",
-        justifyContent: "center",
-        borderWidth: 3,
-        borderColor: "#fff",
     },
     qrHelper: {
         color: theme.textMuted,
@@ -918,7 +1046,6 @@ const styles = StyleSheet.create({
         borderColor: theme.accentBorder,
     },
     promoTitle: { color: theme.text, fontSize: 13, fontWeight: "600" },
-    promoSub: { color: theme.textMuted, fontSize: 11 },
     promoCta: {
         paddingHorizontal: 10,
         paddingVertical: 6,
@@ -940,7 +1067,48 @@ const styles = StyleSheet.create({
     },
     upgradeTitle: { color: theme.text, fontSize: 13, fontWeight: "600" },
     upgradeSub: { color: theme.textSecondary, fontSize: 11 },
-    canvasWrap: { flex: 1, padding: 16, gap: 12 },
+    canvasWrap: {
+        flex: 1,
+        padding: 16,
+        gap: 12,
+        position: "relative",
+    },
+    floatingSidebarWrap: {
+        position: "absolute",
+        top: 16,
+        left: 16,
+        zIndex: 5,
+    },
+    floatingSidebar: {
+        width: 292,
+        maxHeight: 560,
+        backgroundColor: theme.panel,
+        borderWidth: 1,
+        borderColor: theme.border,
+        borderRadius: radii.xl,
+        overflow: "hidden",
+        boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
+    },
+    floatingSidebarScroll: {
+        maxHeight: 560,
+    },
+    sidebarDockButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: radii.pill,
+        backgroundColor: theme.card,
+        borderWidth: 1,
+        borderColor: theme.accentBorder,
+        boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+    },
+    sidebarDockText: {
+        color: theme.text,
+        fontSize: 13,
+        fontWeight: "600",
+    },
     canvas: {
         flex: 1,
         borderRadius: radii.xl,
@@ -956,7 +1124,6 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        // CSS dotted background — works on web; on native we just have flat panel
         ...(Platform.OS === "web"
             ? ({
                   backgroundImage:
@@ -1031,6 +1198,16 @@ const styles = StyleSheet.create({
         color: theme.text,
         fontSize: 14,
         ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as unknown as object) : {}),
+    },
+    attachButton: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: theme.cardElevated,
+        borderWidth: 1,
+        borderColor: theme.border,
     },
     sendBtn: {
         flexDirection: "row",
