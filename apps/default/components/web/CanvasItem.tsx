@@ -66,6 +66,7 @@ export function CanvasItem({
             : item.itemType === "text"
               ? 160
               : 140;
+    const suppressSelectUntilRef = useRef(0);
 
     // Default position from server, fallback to gridded layout
     const defaultX = item.canvasX ?? ((index * 0.18 + 0.08) % 0.7);
@@ -89,7 +90,9 @@ export function CanvasItem({
         if (Platform.OS !== "web") return;
         const node = (ref.current as unknown as HTMLElement | null) ?? null;
         if (!node) return;
+        const dragThreshold = 6;
         let dragging = false;
+        let didDrag = false;
         let startX = 0;
         let startY = 0;
         let baseLeft = 0;
@@ -106,23 +109,34 @@ export function CanvasItem({
                 return;
             }
             dragging = true;
+            didDrag = false;
             startX = e.clientX;
             startY = e.clientY;
             baseLeft = parseFloat((node.style.left || `${left}px`).replace("px", ""));
             baseTop = parseFloat((node.style.top || `${top}px`).replace("px", ""));
+            node.style.cursor = "grabbing";
             e.preventDefault();
             e.stopPropagation();
         };
         const onMouseMove = (e: MouseEvent) => {
             if (!dragging) return;
-            const nx = baseLeft + (e.clientX - startX);
-            const ny = baseTop + (e.clientY - startY);
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            if (!didDrag && Math.hypot(deltaX, deltaY) >= dragThreshold) {
+                didDrag = true;
+            }
+            if (!didDrag) return;
+            const nx = baseLeft + deltaX;
+            const ny = baseTop + deltaY;
             node.style.left = `${nx}px`;
             node.style.top = `${ny}px`;
         };
         const onMouseUp = () => {
             if (!dragging) return;
             dragging = false;
+            node.style.cursor = "grab";
+            if (!didDrag) return;
+            suppressSelectUntilRef.current = Date.now() + 250;
             const finalLeft = parseFloat(node.style.left.replace("px", ""));
             const finalTop = parseFloat(node.style.top.replace("px", ""));
             if (canvasW > 0 && canvasH > 0) {
@@ -161,7 +175,13 @@ export function CanvasItem({
                 },
             ]}
         >
-            <Pressable onPress={onSelect} style={styles.previewArea}>
+            <Pressable
+                onPress={() => {
+                    if (Date.now() < suppressSelectUntilRef.current) return;
+                    onSelect();
+                }}
+                style={styles.previewArea}
+            >
                 {item.itemType === "image" && item.fileUrl ? (
                     <Image
                         source={{ uri: item.fileUrl }}
