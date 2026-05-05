@@ -250,15 +250,15 @@ export default function WebDashboard() {
 
     const dimensions = useWindowDimensions();
     const compact = dimensions.width < 1024;
-    const useFloatingSidebar = isAuthed && !compact;
+    const useFloatingSidebar = connected && !compact;
 
     useEffect(() => {
-        if (compact || !isAuthed) {
+        if (compact || !connected) {
             setSidebarOpen(true);
             return;
         }
         setSidebarOpen(false);
-    }, [compact, isAuthed]);
+    }, [compact, connected]);
 
     const focusComposer = useCallback(() => {
         textInputRef.current?.focus();
