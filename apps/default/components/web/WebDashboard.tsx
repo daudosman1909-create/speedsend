@@ -41,6 +41,12 @@ interface CanvasItemFrame {
     height: number;
 }
 
+interface CanvasDragState {
+    ids: Id<"sharedItems">[];
+    deltaX: number;
+    deltaY: number;
+}
+
 const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
 
 const CANVAS_CONTROLS = [
@@ -86,6 +92,19 @@ function createSelectionBox(
         width: Math.abs(currentX - startX),
         height: Math.abs(currentY - startY),
     };
+}
+
+function areDragStatesEqual(
+    previous: CanvasDragState | null,
+    next: CanvasDragState | null
+) {
+    if (previous === next) return true;
+    if (!previous || !next) return false;
+    return (
+        previous.ids === next.ids &&
+        previous.deltaX === next.deltaX &&
+        previous.deltaY === next.deltaY
+    );
 }
 
 function getCanvasItemFrame(
@@ -925,15 +944,13 @@ function DropCanvas({
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [selectedItemIds, setSelectedItemIds] = useState<Id<"sharedItems">[]>([]);
     const [selectionBox, setSelectionBox] = useState<CanvasSelectionBox | null>(null);
-    const [dragState, setDragState] = useState<{
-        ids: Id<"sharedItems">[];
-        deltaX: number;
-        deltaY: number;
-    } | null>(null);
+    const [dragState, setDragState] = useState<CanvasDragState | null>(null);
     const [infoOpen, setInfoOpen] = useState(false);
     const infoAnim = useRef(new Animated.Value(0)).current;
     const panRef = useRef(pan);
     const selectedItemIdsRef = useRef<Id<"sharedItems">[]>([]);
+    const dragPreviewFrameRef = useRef<number | null>(null);
+    const pendingDragStateRef = useRef<CanvasDragState | null>(null);
 
     const itemFrames = useMemo(() => {
         const frames = new Map<Id<"sharedItems">, CanvasItemFrame>();
@@ -947,6 +964,20 @@ function DropCanvas({
         () => new Set<Id<"sharedItems">>(selectedItemIds),
         [selectedItemIds]
     );
+    const draggedItemIdSet = useMemo(
+        () => new Set<Id<"sharedItems">>(dragState?.ids ?? []),
+        [dragState]
+    );
+    const sharedDragOffset = useMemo(
+        () =>
+            dragState
+                ? {
+                      x: dragState.deltaX,
+                      y: dragState.deltaY,
+                  }
+                : undefined,
+        [dragState]
+    );
 
     useEffect(() => {
         panRef.current = pan;
@@ -955,6 +986,14 @@ function DropCanvas({
     useEffect(() => {
         selectedItemIdsRef.current = selectedItemIds;
     }, [selectedItemIds]);
+
+    useEffect(() => {
+        return () => {
+            if (dragPreviewFrameRef.current !== null && typeof cancelAnimationFrame === "function") {
+                cancelAnimationFrame(dragPreviewFrameRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         Animated.spring(infoAnim, {
@@ -1016,21 +1055,47 @@ function DropCanvas({
         );
     }, []);
 
+    const flushPendingDragPreview = useCallback(() => {
+        dragPreviewFrameRef.current = null;
+        const nextDragState = pendingDragStateRef.current;
+        setDragState((previousDragState) =>
+            areDragStatesEqual(previousDragState, nextDragState)
+                ? previousDragState
+                : nextDragState
+        );
+    }, []);
+
     const handlePreviewDrag = useCallback(
         (ids: Id<"sharedItems">[], deltaX: number, deltaY: number) => {
             if (ids.length === 0) {
+                pendingDragStateRef.current = null;
                 setDragState(null);
                 return;
             }
             const nextDelta = clampGroupDelta(ids, deltaX, deltaY);
-            setDragState({ ids, deltaX: nextDelta.x, deltaY: nextDelta.y });
+            pendingDragStateRef.current = {
+                ids,
+                deltaX: nextDelta.x,
+                deltaY: nextDelta.y,
+            };
+            if (typeof requestAnimationFrame !== "function") {
+                flushPendingDragPreview();
+                return;
+            }
+            if (dragPreviewFrameRef.current !== null) return;
+            dragPreviewFrameRef.current = requestAnimationFrame(flushPendingDragPreview);
         },
-        [clampGroupDelta]
+        [clampGroupDelta, flushPendingDragPreview]
     );
 
     const handleCommitDrag = useCallback(
         (ids: Id<"sharedItems">[], deltaX: number, deltaY: number) => {
             const nextDelta = clampGroupDelta(ids, deltaX, deltaY);
+            pendingDragStateRef.current = null;
+            if (dragPreviewFrameRef.current !== null && typeof cancelAnimationFrame === "function") {
+                cancelAnimationFrame(dragPreviewFrameRef.current);
+                dragPreviewFrameRef.current = null;
+            }
             setDragState(null);
             ids.forEach((id) => {
                 const frame = itemFrames.get(id);
@@ -1043,6 +1108,27 @@ function DropCanvas({
             });
         },
         [clampGroupDelta, itemFrames, onUpdatePosition, surfaceHeight, surfaceWidth]
+    );
+
+    const handleSelectItem = useCallback(
+        (id: Id<"sharedItems">) => {
+            onSelect(id);
+        },
+        [onSelect]
+    );
+
+    const handleDeleteItem = useCallback(
+        (id: Id<"sharedItems">) => {
+            onDelete(id);
+        },
+        [onDelete]
+    );
+
+    const handleSaveItem = useCallback(
+        (id: Id<"sharedItems">) => {
+            onSave(id);
+        },
+        [onSave]
     );
 
     useEffect(() => {
@@ -1275,15 +1361,11 @@ function DropCanvas({
                         canvasH={surfaceHeight}
                         isSelected={selectedItemIdSet.has(item._id)}
                         selectedItemIds={selectedItemIds}
-                        dragOffset={
-                            dragState?.ids.includes(item._id)
-                                ? { x: dragState.deltaX, y: dragState.deltaY }
-                                : undefined
-                        }
-                        onSelect={() => onSelect(item._id)}
+                        dragOffset={draggedItemIdSet.has(item._id) ? sharedDragOffset : undefined}
+                        onSelectItem={handleSelectItem}
                         onActivateSelection={handleActivateSelection}
-                        onDelete={() => onDelete(item._id)}
-                        onSave={() => onSave(item._id)}
+                        onDeleteItem={handleDeleteItem}
+                        onSaveItem={handleSaveItem}
                         onPreviewDrag={handlePreviewDrag}
                         onCommitDrag={handleCommitDrag}
                     />

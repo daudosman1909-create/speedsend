@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { memo, useEffect, useRef } from "react";
 import {
     View,
     Text,
@@ -25,10 +25,10 @@ interface Props {
     isSelected: boolean;
     selectedItemIds: ItemDoc["_id"][];
     dragOffset?: { x: number; y: number };
-    onSelect: () => void;
+    onSelectItem: (id: ItemDoc["_id"]) => void;
     onActivateSelection: (id: ItemDoc["_id"]) => void;
-    onDelete: () => void;
-    onSave: () => void;
+    onDeleteItem: (id: ItemDoc["_id"]) => void;
+    onSaveItem: (id: ItemDoc["_id"]) => void;
     onPreviewDrag: (ids: ItemDoc["_id"][], deltaX: number, deltaY: number) => void;
     onCommitDrag: (ids: ItemDoc["_id"][], deltaX: number, deltaY: number) => void;
 }
@@ -54,7 +54,7 @@ function iconForType(t: ItemDoc["itemType"]): React.ComponentProps<typeof Ionico
     }
 }
 
-export function CanvasItem({
+function CanvasItemComponent({
     item,
     index,
     canvasW,
@@ -62,10 +62,10 @@ export function CanvasItem({
     isSelected,
     selectedItemIds,
     dragOffset,
-    onSelect,
+    onSelectItem,
     onActivateSelection,
-    onDelete,
-    onSave,
+    onDeleteItem,
+    onSaveItem,
     onPreviewDrag,
     onCommitDrag,
 }: Props) {
@@ -208,7 +208,7 @@ export function CanvasItem({
             <Pressable
                 onPress={() => {
                     if (Date.now() < suppressSelectUntilRef.current) return;
-                    onSelect();
+                    onSelectItem(item._id);
                 }}
                 style={styles.previewArea}
             >
@@ -372,14 +372,20 @@ export function CanvasItem({
                             />
                         </Pressable>
                     ) : null}
-                    <Pressable style={styles.actionBtn} onPress={onSave}>
+                    <Pressable
+                        style={styles.actionBtn}
+                        onPress={() => onSaveItem(item._id)}
+                    >
                         <Ionicons
                             name={item.isSaved ? "star" : "star-outline"}
                             size={12}
                             color={item.isSaved ? theme.accent : theme.textSecondary}
                         />
                     </Pressable>
-                    <Pressable style={styles.actionBtn} onPress={onDelete}>
+                    <Pressable
+                        style={styles.actionBtn}
+                        onPress={() => onDeleteItem(item._id)}
+                    >
                         <Ionicons
                             name="trash-outline"
                             size={12}
@@ -391,6 +397,33 @@ export function CanvasItem({
         </Animated.View>
     );
 }
+
+function areDragOffsetsEqual(
+    previous?: { x: number; y: number },
+    next?: { x: number; y: number }
+) {
+    if (!previous && !next) return true;
+    if (!previous || !next) return false;
+    return previous.x === next.x && previous.y === next.y;
+}
+
+export const CanvasItem = memo(CanvasItemComponent, (previous, next) => {
+    return (
+        previous.item === next.item &&
+        previous.index === next.index &&
+        previous.canvasW === next.canvasW &&
+        previous.canvasH === next.canvasH &&
+        previous.isSelected === next.isSelected &&
+        previous.selectedItemIds === next.selectedItemIds &&
+        areDragOffsetsEqual(previous.dragOffset, next.dragOffset) &&
+        previous.onSelectItem === next.onSelectItem &&
+        previous.onActivateSelection === next.onActivateSelection &&
+        previous.onDeleteItem === next.onDeleteItem &&
+        previous.onSaveItem === next.onSaveItem &&
+        previous.onPreviewDrag === next.onPreviewDrag &&
+        previous.onCommitDrag === next.onCommitDrag
+    );
+});
 
 const styles = StyleSheet.create({
     card: {
