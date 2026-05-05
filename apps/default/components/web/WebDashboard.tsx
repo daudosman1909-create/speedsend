@@ -969,7 +969,6 @@ const styles = StyleSheet.create({
                   backgroundImage:
                       "radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)",
                   backgroundSize: "22px 22px",
-                  backgroundPosition: "0 0",
               } as unknown as object)
             : {}),
     },
