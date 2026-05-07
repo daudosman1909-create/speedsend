@@ -12,10 +12,16 @@
         "build": "turbo run build",
         "lint": "turbo run lint",
         "typecheck": "turbo run typecheck",
-        "test": "turbo run test"
+        "test": "turbo run test",
+        "start": "cd apps/default && npm run start",
+        "android": "cd apps/default && npm run android",
+        "ios": "cd apps/default && npm run ios",
+        "web": "cd apps/default && npm run web",
+        "start:mobile": "cd apps/default && npm run start",
+        "launch": "cd apps/default && npm run start"
     },
     "devDependencies": {
         "turbo": "^2.0.12"
     },
-    "packageManager": "bun@1.3.6"
+    "packageManager": "npm@10.0.0"
 }

@@ -3,6 +3,7 @@
         "name": "SpeedSend",
         "slug": "speedsend",
         "version": "1.0.0",
+        "sdkVersion": "55.0.0",
         "runtimeVersion": {
             "policy": "sdkVersion"
         },

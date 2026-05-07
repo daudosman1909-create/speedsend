@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "start": "expo start",
+    "launch": "expo start",
     "start:web": "expo start --web",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -57,7 +58,6 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@convex-dev/eslint-plugin": "^1.0.0",
     "@expo/env": "^2.0.8",
     "@types/node": "^22.0.0",
     "@types/react": "~19.1.10",
