@@ -1,48 +1,55 @@
 {
-    "expo": {
-        "name": "SpeedSend",
-        "slug": "speedsend",
-        "version": "1.0.0",
-        "sdkVersion": "55.0.0",
-        "runtimeVersion": {
-            "policy": "sdkVersion"
-        },
-        "orientation": "portrait",
-        "icon": "./assets/images/icon.png",
-        "scheme": "speedsend",
-        "userInterfaceStyle": "automatic",
-        "newArchEnabled": true,
-        "ios": {
-            "supportsTablet": true
-        },
-        "android": {
-            "adaptiveIcon": {
-                "foregroundImage": "./assets/images/adaptive-icon.png",
-                "backgroundColor": "#ffffff"
-            }
-        },
-        "web": {
-            "bundler": "metro",
-            "output": "single",
-            "favicon": "./assets/images/icon.png"
-        },
-        "plugins": [
-            "expo-router",
-            [
-                "expo-splash-screen",
-                {
-                    "image": "./assets/images/splash-icon.png",
-                    "imageWidth": 200,
-                    "resizeMode": "contain",
-                    "backgroundColor": "#FAFAFA"
-                }
-            ],
-            "expo-secure-store",
-            "expo-font",
-            "expo-web-browser"
-        ],
-        "experiments": {
-            "typedRoutes": true
+  "expo": {
+    "name": "SpeedSend",
+    "slug": "SpeedSend",
+    "version": "1.0.0",
+    "sdkVersion": "55.0.0",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "speedsend",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FAFAFA"
         }
-    }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "58d730e8-33b4-4394-8809-e7a199a43556"
+      }
+    },
+    "owner": "speedsend"
+  }
 }
