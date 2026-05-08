@@ -22,6 +22,8 @@ interface Props {
     index: number;
     canvasW: number;
     canvasH: number;
+    scale: number;
+    frame: { left: number; top: number; width: number; height: number } | undefined;
     isSelected: boolean;
     selectedItemIds: ItemDoc["_id"][];
     onSelectItem: (id: ItemDoc["_id"]) => void;
@@ -62,6 +64,8 @@ function CanvasItemComponent({
     index,
     canvasW,
     canvasH,
+    scale,
+    frame,
     isSelected,
     selectedItemIds,
     onSelectItem,
@@ -82,12 +86,26 @@ function CanvasItemComponent({
     const isSelectedRef = useRef(isSelected);
     const selectedItemIdsRef = useRef(selectedItemIds);
 
+    const left = frame?.left ?? 0;
+    const top = frame?.top ?? 0;
+
+    const pendingDropTargetRef = useRef<{ left: number; top: number } | null>(null);
+    const clearPreviewRef = useRef<() => void>(() => {});
+
+    useEffect(() => {
+        if (pendingDropTargetRef.current) {
+            const dx = Math.abs(left - pendingDropTargetRef.current.left);
+            const dy = Math.abs(top - pendingDropTargetRef.current.top);
+            if (dx < 0.5 && dy < 0.5) {
+                pendingDropTargetRef.current = null;
+                clearPreviewRef.current();
+            }
+        }
+    }, [left, top]);
+
     // Default position from server, fallback to gridded layout
     const defaultX = item.canvasX ?? ((index * 0.18 + 0.08) % 0.7);
     const defaultY = item.canvasY ?? (Math.floor(index / 4) * 0.25 + 0.1);
-
-    const left = Math.max(8, Math.min(canvasW - cardW - 8, defaultX * canvasW));
-    const top = Math.max(8, Math.min(canvasH - cardH - 8, defaultY * canvasH));
 
     const fade = useRef(new Animated.Value(0)).current;
     useEffect(() => {
@@ -140,6 +158,7 @@ function CanvasItemComponent({
                 previewNode.style.willChange = "";
             });
         };
+        clearPreviewRef.current = clearPreview;
 
         const lockSelection = () => {
             previousBodyUserSelect = body.style.userSelect;
@@ -209,8 +228,8 @@ function CanvasItemComponent({
 
         const onMouseMove = (event: MouseEvent) => {
             if (!dragging) return;
-            const rawDeltaX = event.clientX - startX;
-            const rawDeltaY = event.clientY - startY;
+            const rawDeltaX = (event.clientX - startX) / scale;
+            const rawDeltaY = (event.clientY - startY) / scale;
             const nextDelta = clampDragDelta(activeDragIds, rawDeltaX, rawDeltaY);
             currentDeltaX = nextDelta.x;
             currentDeltaY = nextDelta.y;
@@ -234,14 +253,13 @@ function CanvasItemComponent({
                 return;
             }
             suppressSelectUntilRef.current = Date.now() + 250;
+            
+            pendingDropTargetRef.current = {
+                left: left + currentDeltaX,
+                top: top + currentDeltaY,
+            };
+            
             onCommitDrag(activeDragIds, currentDeltaX, currentDeltaY);
-            if (typeof requestAnimationFrame === "function") {
-                requestAnimationFrame(() => {
-                    clearPreview();
-                });
-                return;
-            }
-            clearPreview();
         };
 
         node.addEventListener("selectstart", onSelectStart);
@@ -483,6 +501,9 @@ export const CanvasItem = memo(CanvasItemComponent, (previous, next) => {
         previous.index === next.index &&
         previous.canvasW === next.canvasW &&
         previous.canvasH === next.canvasH &&
+        previous.scale === next.scale &&
+        previous.frame?.left === next.frame?.left &&
+        previous.frame?.top === next.frame?.top &&
         previous.isSelected === next.isSelected &&
         previous.selectedItemIds === next.selectedItemIds &&
         previous.clampDragDelta === next.clampDragDelta &&
