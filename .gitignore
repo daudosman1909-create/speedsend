@@ -44,4 +44,5 @@ yarn-error.*
 *.lock
 
 # Filesystem recovery
-lost+found/
+lost+found/.env.local
+apps/default/.env.local
