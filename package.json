@@ -1,13 +1,13 @@
 {
   "name": "speedsend",
-  "main": "node_modules/expo/AppEntry.js",
+  "main": "index.js",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "start": "cd apps/default && expo start",
+    "android": "cd apps/default && expo start --android",
+    "ios": "cd apps/default && expo start --ios",
+    "web": "cd apps/default && expo start --web"
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.90",
