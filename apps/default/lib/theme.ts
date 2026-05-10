@@ -1,4 +1,6 @@
-export const theme = {
+import { Platform } from "react-native";
+
+const darkColors = {
     bg: "#101013",
     panel: "#17171b",
     card: "#1e1e23",
@@ -18,6 +20,32 @@ export const theme = {
     success: "#f5f5f7",
     danger: "#ff5e6c",
     warning: "#f5a524",
+};
+
+const webColors = {
+    bg: "var(--bg, #101013)",
+    panel: "var(--panel, #17171b)",
+    card: "var(--card, #1e1e23)",
+    cardElevated: "var(--cardElevated, #25252b)",
+    border: "var(--border, #2f2f36)",
+    borderSoft: "var(--borderSoft, #24242a)",
+    text: "var(--text, #f5f5f7)",
+    textPrimary: "var(--textPrimary, #f5f5f7)",
+    textSecondary: "var(--textSecondary, #b4b4bc)",
+    textMuted: "var(--textMuted, #7d7d86)",
+    textTertiary: "var(--textTertiary, #7d7d86)",
+    accent: "var(--accent, #f5f5f7)",
+    accentBright: "var(--accentBright, #ffffff)",
+    accentSoft: "var(--accentSoft, rgba(255,255,255,0.08))",
+    accentBorder: "var(--accentBorder, rgba(255,255,255,0.18))",
+    accentForeground: "var(--accentForeground, #101013)",
+    success: "var(--success, #f5f5f7)",
+    danger: "var(--danger, #ff5e6c)",
+    warning: "var(--warning, #f5a524)",
+};
+
+export const theme = {
+    ...(Platform.OS === "web" ? webColors : darkColors),
     mono: "ui-monospace, Menlo, Monaco, 'Cascadia Code', 'Roboto Mono', monospace",
 };
 

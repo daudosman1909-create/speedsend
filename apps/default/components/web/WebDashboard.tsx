@@ -49,6 +49,52 @@ interface CanvasPositionOverride {
 
 const STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
 
+const THEME_STYLES = `
+:root {
+    --bg: #101013;
+    --panel: #17171b;
+    --card: #1e1e23;
+    --cardElevated: #25252b;
+    --border: #2f2f36;
+    --borderSoft: #24242a;
+    --text: #f5f5f7;
+    --textPrimary: #f5f5f7;
+    --textSecondary: #b4b4bc;
+    --textMuted: #7d7d86;
+    --textTertiary: #7d7d86;
+    --accent: #f5f5f7;
+    --accentBright: #ffffff;
+    --accentSoft: rgba(255,255,255,0.08);
+    --accentBorder: rgba(255,255,255,0.18);
+    --accentForeground: #101013;
+    --success: #f5f5f7;
+    --danger: #ff5e6c;
+    --warning: #f5a524;
+}
+
+.light-mode {
+    --bg: #f0f0f5;
+    --panel: #ffffff;
+    --card: #ffffff;
+    --cardElevated: #f9f9fb;
+    --border: #e2e2e8;
+    --borderSoft: #ebebf0;
+    --text: #101013;
+    --textPrimary: #101013;
+    --textSecondary: #6b6b75;
+    --textMuted: #90909a;
+    --textTertiary: #90909a;
+    --accent: #101013;
+    --accentBright: #000000;
+    --accentSoft: rgba(0,0,0,0.05);
+    --accentBorder: rgba(0,0,0,0.15);
+    --accentForeground: #ffffff;
+    --success: #101013;
+    --danger: #ff3b30;
+    --warning: #ff9500;
+}
+`;
+
 const CANVAS_CONTROLS = [
     { key: "Drag card", value: "Move one item or the whole selected group" },
     { key: "Left-drag empty space", value: "Draw a box to select multiple items" },
@@ -229,7 +275,24 @@ export default function WebDashboard() {
     const [uploadingCount, setUploadingCount] = useState(0);
     const [dragOver, setDragOver] = useState(false);
     const [panelOpen, setPanelOpen] = useState(true);
+    const [isDarkMode, setIsDarkMode] = useState(true);
     const textInputRef = useRef<TextInput>(null);
+
+    useEffect(() => {
+        if (Platform.OS !== "web" || typeof document === "undefined") return;
+        let styleEl = document.getElementById("speedsend-theme-vars");
+        if (!styleEl) {
+            styleEl = document.createElement("style");
+            styleEl.id = "speedsend-theme-vars";
+            styleEl.innerHTML = THEME_STYLES;
+            document.head.appendChild(styleEl);
+        }
+        if (isDarkMode) {
+            document.body.classList.remove("light-mode");
+        } else {
+            document.body.classList.add("light-mode");
+        }
+    }, [isDarkMode]);
 
     const sendText = useCallback(
         async (text: string) => {
@@ -475,6 +538,13 @@ export default function WebDashboard() {
                     <Text style={styles.brandText}>SpeedSend</Text>
                 </View>
                 <View style={styles.topActions}>
+                    {Platform.OS === "web" && (
+                        <PillButton
+                            icon={isDarkMode ? "moon-outline" : "sunny-outline"}
+                            label={isDarkMode ? "Dark" : "Light"}
+                            onPress={() => setIsDarkMode(!isDarkMode)}
+                        />
+                    )}
                     <PillButton
                         icon="clipboard-outline"
                         label="Clipboard"
@@ -951,11 +1021,13 @@ function DropCanvas({
         Record<string, CanvasPositionOverride>
     >({});
     const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [scale, setScale] = useState(1);
     const [selectedItemIds, setSelectedItemIds] = useState<Id<"sharedItems">[]>([]);
     const [selectionBox, setSelectionBox] = useState<CanvasSelectionBox | null>(null);
     const [infoOpen, setInfoOpen] = useState(false);
     const infoAnim = useRef(new Animated.Value(0)).current;
     const panRef = useRef(pan);
+    const scaleRef = useRef(scale);
     const selectedItemIdsRef = useRef<Id<"sharedItems">[]>([]);
 
     const itemFrames = useMemo(() => {
@@ -983,6 +1055,10 @@ function DropCanvas({
     useEffect(() => {
         panRef.current = pan;
     }, [pan]);
+
+    useEffect(() => {
+        scaleRef.current = scale;
+    }, [scale]);
 
     useEffect(() => {
         selectedItemIdsRef.current = selectedItemIds;
@@ -1044,6 +1120,7 @@ function DropCanvas({
             x: Math.max(minX, Math.min(0, (size.w - surfaceWidth) / 2)),
             y: Math.max(minY, Math.min(0, (size.h - surfaceHeight) / 2)),
         });
+        setScale(1);
     }, [size.w, size.h, surfaceWidth, surfaceHeight]);
 
     const clampGroupDelta = useCallback(
@@ -1156,8 +1233,8 @@ function DropCanvas({
         const getSurfacePoint = (clientX: number, clientY: number) => {
             const rect = node.getBoundingClientRect();
             return {
-                x: clamp(clientX - rect.left - panRef.current.x, 0, surfaceWidth),
-                y: clamp(clientY - rect.top - panRef.current.y, 0, surfaceHeight),
+                x: clamp((clientX - rect.left - panRef.current.x) / scaleRef.current, 0, surfaceWidth),
+                y: clamp((clientY - rect.top - panRef.current.y) / scaleRef.current, 0, surfaceHeight),
             };
         };
 
@@ -1188,6 +1265,25 @@ function DropCanvas({
         let basePan = panRef.current;
         let selectionStart = { x: 0, y: 0 };
         const selectionThreshold = 4;
+
+        const onWheel = (event: WheelEvent) => {
+            event.preventDefault();
+            const zoomSensitivity = 0.002;
+            const delta = -event.deltaY * zoomSensitivity;
+            const newScale = clamp(scaleRef.current * Math.exp(delta), 0.2, 3);
+            
+            const rect = node.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+            
+            const scaleRatio = newScale / scaleRef.current;
+            
+            setPan(prev => ({
+                x: mouseX - (mouseX - prev.x) * scaleRatio,
+                y: mouseY - (mouseY - prev.y) * scaleRatio,
+            }));
+            setScale(newScale);
+        };
 
         const onMouseDown = (event: MouseEvent) => {
             if (event.button === 1) {
@@ -1220,12 +1316,10 @@ function DropCanvas({
         const onMouseMove = (event: MouseEvent) => {
             if (panning) {
                 event.preventDefault();
-                setPan(
-                    clampPan({
-                        x: basePan.x + (event.clientX - startX),
-                        y: basePan.y + (event.clientY - startY),
-                    })
-                );
+                setPan({
+                    x: basePan.x + (event.clientX - startX),
+                    y: basePan.y + (event.clientY - startY),
+                });
                 return;
             }
 
@@ -1311,6 +1405,7 @@ function DropCanvas({
             }
         };
 
+        node.addEventListener("wheel", onWheel, { passive: false });
         node.addEventListener("dragover", onDragOver);
         node.addEventListener("dragleave", onDragLeave);
         node.addEventListener("drop", onDrop);
@@ -1321,6 +1416,7 @@ function DropCanvas({
         window.addEventListener("keydown", onKeyDown);
 
         return () => {
+            node.removeEventListener("wheel", onWheel);
             node.removeEventListener("dragover", onDragOver);
             node.removeEventListener("dragleave", onDragLeave);
             node.removeEventListener("drop", onDrop);
@@ -1357,7 +1453,12 @@ function DropCanvas({
                     {
                         width: surfaceWidth,
                         height: surfaceHeight,
-                        transform: [{ translateX: pan.x }, { translateY: pan.y }],
+                        transform: [
+                            { translateX: pan.x },
+                            { translateY: pan.y },
+                            { scale: scale },
+                        ],
+                        transformOrigin: "0 0" as any,
                     },
                 ]}
             >
@@ -1369,6 +1470,8 @@ function DropCanvas({
                         index={index}
                         canvasW={surfaceWidth}
                         canvasH={surfaceHeight}
+                        scale={scale}
+                        frame={itemFrames.get(item._id)}
                         isSelected={selectedItemIdSet.has(item._id)}
                         selectedItemIds={selectedItemIds}
                         onSelectItem={handleSelectItem}
